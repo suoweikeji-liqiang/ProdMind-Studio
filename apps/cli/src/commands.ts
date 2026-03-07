@@ -1,12 +1,13 @@
 import { createFakeProvider } from '@prodmind/llm-adapter';
 import { runChallengeRound, buildChallengeSummary, createSession as createChallengeSession } from '@prodmind/challenge-engine';
 import { createDecisionSession, runDecisionOrchestration, buildDecisionSummary } from '@prodmind/decision-engine';
-import { createProjectStore } from '@prodmind/asset-engine';
+import { createProjectStore, createHistoryStore } from '@prodmind/asset-engine';
 import { writeChallengeArtifact } from '@prodmind/asset-engine';
 import type { ChallengeInput } from '@prodmind/challenge-engine';
-import type { ChallengeToAssetHandoff, ChallengeArtifact } from '@prodmind/shared-types';
+import type { ChallengeToAssetHandoff, ChallengeArtifact, WorkflowRun, PhaseExecution, WorkflowResult } from '@prodmind/shared-types';
 import * as fs from 'fs';
 import * as path from 'path';
+import { detectCompletedPhases } from './recovery.js';
 
 interface WorkflowStep {
   stepId: string;
@@ -197,38 +198,171 @@ export async function exportAssets(projectPath: string, outputPath: string): Pro
   console.log(`Assets exported to: ${outputPath}`);
 }
 
+export async function listHistory(projectPath: string): Promise<void> {
+  const historyStore = createHistoryStore();
+  const runs = await historyStore.listRuns(projectPath);
+
+  if (runs.length === 0) {
+    console.log('No workflow history found.');
+    return;
+  }
+
+  console.log(`\nWorkflow History (${runs.length} runs):\n`);
+  for (const run of runs) {
+    const duration = run.completedAt
+      ? `${Math.round((new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime()) / 1000)}s`
+      : 'running';
+    const statusIcon = run.status === 'completed' ? '✓' : run.status === 'failed' ? '✗' : '⋯';
+    console.log(`${statusIcon} ${run.runId}`);
+    console.log(`  Idea: ${run.idea.substring(0, 60)}${run.idea.length > 60 ? '...' : ''}`);
+    console.log(`  Status: ${run.status} | Duration: ${duration}`);
+    console.log('');
+  }
+}
+
+export async function showHistory(projectPath: string, runId: string): Promise<void> {
+  const historyStore = createHistoryStore();
+  const run = await historyStore.getRun(projectPath, runId);
+
+  if (!run) {
+    console.log(`Run ${runId} not found.`);
+    return;
+  }
+
+  console.log(`\nWorkflow Run: ${run.runId}\n`);
+  console.log(`Idea: ${run.idea}`);
+  console.log(`Status: ${run.status}`);
+  console.log(`Started: ${run.startedAt}`);
+  if (run.completedAt) console.log(`Completed: ${run.completedAt}`);
+  if (run.error) console.log(`Error: ${run.error}`);
+
+  console.log('\nPhases:');
+  for (const phase of run.phases) {
+    const statusIcon = phase.status === 'completed' ? '✓' : phase.status === 'failed' ? '✗' : phase.status === 'running' ? '⋯' : '○';
+    const duration = phase.durationMs ? `${Math.round(phase.durationMs / 1000)}s` : '-';
+    console.log(`  ${statusIcon} ${phase.phase}: ${phase.status} (${duration})`);
+    if (phase.error) console.log(`    Error: ${phase.error}`);
+  }
+
+  const result = await historyStore.getResult(projectPath, runId);
+  if (result) {
+    console.log('\nArtifacts:');
+    if (result.challenge) console.log(`  - Challenge: ${result.challenge.artifactPath} (${result.challenge.hypothesesCount} hypotheses)`);
+    if (result.decision) console.log(`  - Decision: ${result.decision.artifactPath}`);
+    if (result.assets) console.log(`  - Assets: ${result.assets.files.length} files`);
+  }
+}
+
 export async function runWorkflow(idea: string, projectPath: string): Promise<ExecutionSummary> {
   console.log('Starting full workflow: idea -> challenge -> decision -> assets');
 
   const execution = createWorkflowExecution(idea);
   let current = execution;
+  const historyStore = createHistoryStore();
+
+  const run: WorkflowRun = {
+    runId: execution.executionId,
+    idea,
+    status: 'running',
+    startedAt: execution.startedAt,
+    phases: [
+      { phase: 'challenge', status: 'pending' },
+      { phase: 'decision', status: 'pending' },
+      { phase: 'asset', status: 'pending' },
+    ],
+  };
+
+  await historyStore.saveRun(projectPath, run);
+
+  const updatePhase = async (phase: 'challenge' | 'decision' | 'asset', status: PhaseExecution['status'], error?: string) => {
+    const phaseExec = run.phases.find(p => p.phase === phase)!;
+
+    if (status === 'running') {
+      phaseExec.startedAt = new Date().toISOString();
+    } else if (status === 'completed' || status === 'failed') {
+      phaseExec.completedAt = new Date().toISOString();
+      if (phaseExec.startedAt) {
+        phaseExec.durationMs = new Date(phaseExec.completedAt).getTime() - new Date(phaseExec.startedAt).getTime();
+      }
+    }
+
+    phaseExec.status = status;
+    if (error) phaseExec.error = error;
+
+    await historyStore.updateRun(projectPath, run);
+  };
 
   try {
     current = updateStep(current, 'init', 'running');
     await initProject(projectPath);
     current = updateStep(current, 'init', 'completed');
 
+    const completed = detectCompletedPhases(projectPath);
+    let challengeArtifact: ChallengeArtifact | undefined;
+
     console.log('\n[1/3] Running challenge...');
-    current = updateStep(current, 'challenge', 'running');
-    const challengeArtifact = await runChallenge(idea, projectPath);
-    current = updateStep(current, 'challenge', 'completed');
+    if (completed.challenge) {
+      console.log('  ↻ Challenge already completed, skipping...');
+      await updatePhase('challenge', 'completed');
+      current = updateStep(current, 'challenge', 'completed');
+      const challengePath = path.join(projectPath, 'challenge.md');
+      challengeArtifact = {
+        sessionId: execution.executionId,
+        idea,
+        hypotheses: [],
+        mvpBoundary: '',
+        conflicts: [],
+        falsificationChecks: [],
+        nextActions: [],
+        roundCount: 1,
+        createdAt: new Date().toISOString(),
+      };
+    } else {
+      await updatePhase('challenge', 'running');
+      current = updateStep(current, 'challenge', 'running');
+      challengeArtifact = await runChallenge(idea, projectPath);
+      await updatePhase('challenge', 'completed');
+      current = updateStep(current, 'challenge', 'completed');
+    }
 
     console.log('\n[2/3] Running decision...');
-    current = updateStep(current, 'decision', 'running');
-    await runDecision(idea, projectPath, challengeArtifact);
-    current = updateStep(current, 'decision', 'completed');
+    if (completed.decision) {
+      console.log('  ↻ Decision already completed, skipping...');
+      await updatePhase('decision', 'completed');
+      current = updateStep(current, 'decision', 'completed');
+    } else {
+      await updatePhase('decision', 'running');
+      current = updateStep(current, 'decision', 'running');
+      await runDecision(idea, projectPath, challengeArtifact);
+      await updatePhase('decision', 'completed');
+      current = updateStep(current, 'decision', 'completed');
+    }
 
     console.log('\n[3/3] Exporting assets...');
+    await updatePhase('asset', 'running');
     current = updateStep(current, 'export', 'running');
     await exportAssets(projectPath, path.join(projectPath, 'output'));
+    await updatePhase('asset', 'completed');
     current = updateStep(current, 'export', 'completed');
 
     current = { ...current, status: 'completed', completedAt: new Date().toISOString() };
+    run.status = 'completed';
+    run.completedAt = current.completedAt;
+    await historyStore.updateRun(projectPath, run);
 
     const artifacts = [
       path.join(projectPath, 'challenge.md'),
       path.join(projectPath, 'assets', 'decision.json'),
     ];
+
+    const result: WorkflowResult = {
+      runId: run.runId,
+      challenge: { artifactPath: 'challenge.md', hypothesesCount: challengeArtifact.hypotheses.length },
+      decision: { artifactPath: 'assets/decision.json', recommendation: 'Decision completed' },
+      assets: { projectPath, files: artifacts },
+    };
+
+    await historyStore.saveResult(projectPath, result);
 
     const summary = buildExecutionSummary(current, artifacts);
 
@@ -245,6 +379,16 @@ export async function runWorkflow(idea: string, projectPath: string): Promise<Ex
       current = updateStep(current, failedStep.stepId, 'failed', error instanceof Error ? error.message : String(error));
     }
     current = { ...current, status: 'failed', completedAt: new Date().toISOString() };
+    run.status = 'failed';
+    run.completedAt = current.completedAt;
+    run.error = error instanceof Error ? error.message : String(error);
+
+    const failedPhase = run.phases.find(p => p.status === 'running');
+    if (failedPhase) {
+      await updatePhase(failedPhase.phase, 'failed', run.error);
+    }
+
+    await historyStore.updateRun(projectPath, run);
     throw error;
   }
 }

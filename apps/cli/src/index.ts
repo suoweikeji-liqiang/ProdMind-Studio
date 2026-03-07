@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { initProject, runChallenge, runDecision, exportAssets, runWorkflow } from './commands.js';
+import { initProject, runChallenge, runDecision, exportAssets, runWorkflow, listHistory, showHistory } from './commands.js';
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -49,6 +49,24 @@ async function main() {
         await runWorkflow(idea, projectPath);
         break;
       }
+      case 'history': {
+        const subcommand = args[1];
+        const projectPath = args[3] || args[2] || './prodmind-project';
+        if (subcommand === 'list') {
+          await listHistory(projectPath);
+        } else if (subcommand === 'show') {
+          const runId = args[2];
+          if (!runId) {
+            console.error('Usage: prodmind-studio history show <runId> [projectPath]');
+            process.exit(1);
+          }
+          await showHistory(projectPath, runId);
+        } else {
+          console.error('Usage: prodmind-studio history <list|show> [runId] [projectPath]');
+          process.exit(1);
+        }
+        break;
+      }
       default:
         console.log('ProdMind Studio CLI');
         console.log('');
@@ -58,6 +76,8 @@ async function main() {
         console.log('  decision <problem> [path]      Run decision analysis');
         console.log('  export [path] [output]         Export assets');
         console.log('  workflow <idea> [path]         Run full workflow');
+        console.log('  history list [path]            List workflow history');
+        console.log('  history show <runId> [path]    Show workflow details');
         break;
     }
   } catch (error) {
