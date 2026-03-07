@@ -136,6 +136,76 @@ None (uses fake provider by default)
 - `SMOKE_TEST_REAL_PROVIDER=1` - Enable real provider smoke tests
 - `ANTHROPIC_API_KEY` - Required if using real provider
 
+**Phase 5A Configuration:**
+- `PERSISTENCE_BACKEND` - Backend selection: `file` (default) | `sqlite`
+- `PERSISTENCE_PATH` - Custom base path for file backend
+- `PERSISTENCE_CONNECTION` - SQLite database path
+- `PROVIDER_MODE` - Provider mode: `fake` (default) | `real`
+- `PROVIDER_TYPE` - Real provider type: `openai` | `anthropic`
+- `OPENAI_API_KEY` - OpenAI API key (if PROVIDER_MODE=real)
+- `ANTHROPIC_API_KEY` - Anthropic API key (if PROVIDER_MODE=real)
+- `MODEL_ID` - Custom model ID
+
+## Backend and Provider Operations (Phase 5A)
+
+### Persistence Backends
+
+**File Backend (Default):**
+```bash
+# No configuration needed - works out of box
+node dist/index.js workflow "your idea"
+
+# Custom path
+PERSISTENCE_PATH=/custom/path node dist/index.js workflow "your idea"
+```
+
+**SQLite Backend (Experimental):**
+```bash
+# Requires native compilation (Visual Studio on Windows)
+PERSISTENCE_BACKEND=sqlite node dist/index.js workflow "your idea"
+
+# Custom database path
+PERSISTENCE_BACKEND=sqlite PERSISTENCE_CONNECTION=/path/to/db.sqlite node dist/index.js workflow "your idea"
+```
+
+**Status:** SQLite backend validates abstraction but requires C++ compiler. Falls back to file backend if unavailable.
+
+### Provider Modes
+
+**Fake Provider (Default - CI Safe):**
+```bash
+# No API keys needed, no costs
+node dist/index.js workflow "your idea"
+```
+
+**Real Provider (Opt-in - Requires API Key):**
+```bash
+# OpenAI
+PROVIDER_MODE=real OPENAI_API_KEY=sk-xxx node dist/index.js workflow "your idea"
+
+# Anthropic
+PROVIDER_MODE=real PROVIDER_TYPE=anthropic ANTHROPIC_API_KEY=sk-ant-xxx node dist/index.js workflow "your idea"
+
+# Custom model
+PROVIDER_MODE=real OPENAI_API_KEY=sk-xxx MODEL_ID=gpt-4o-mini node dist/index.js workflow "your idea"
+```
+
+**Cost Warning:** Real provider mode incurs API costs (~$0.01-0.10 per workflow).
+
+### Real Provider Smoke Test
+
+```bash
+# OpenAI smoke test
+OPENAI_API_KEY=sk-xxx node scripts/smoke-real-provider.mjs
+
+# Anthropic smoke test
+ANTHROPIC_API_KEY=sk-ant-xxx PROVIDER=anthropic node scripts/smoke-real-provider.mjs
+```
+
+Tests: streamText, generateStructured, getMetadata
+
+See [docs/smoke-testing.md](smoke-testing.md) for details.
+
 ## Common Operations
 
 ### Development Workflow
@@ -217,7 +287,8 @@ pnpm run test -- --reporter=verbose
 - No authentication
 - No multi-user support
 - No real-time metrics
-- Fake LLM provider only (real provider deferred)
+- SQLite backend requires native compilation (experimental)
+- Real provider mode opt-in only (not default)
 - Manual recovery only
 
 See `docs/system-maturity.md` for full limitations.

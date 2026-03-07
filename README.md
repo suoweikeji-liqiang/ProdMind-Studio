@@ -5,12 +5,30 @@ Unified repository for a layered product system:
 - decision state orchestration
 - structured requirement asset accumulation
 
-**Current Stage:** Phase 4C complete - internal pilot ready for single-user usage
+**Current Stage:** Phase 5A complete - enhanced persistence and provider foundations
 
 This repo is intentionally migration-first:
 - no large code copy from source repos
 - engine boundaries before shell implementation
 - standards and quality gates before feature volume
+
+## Phase 5A Enhancements
+
+**Persistence:**
+- Abstraction boundary defined (`PersistenceRepository` interface)
+- File backend (default, production-ready)
+- SQLite backend (validation, requires native compilation)
+
+**Provider Integration:**
+- Formalized provider boundary with error normalization
+- Opt-in real provider smoke workflow
+- Minimal observability hooks
+
+**Configuration:**
+- Environment-based backend/provider selection
+- Safe defaults (file backend, fake provider)
+
+See [docs/phase5a-completion-report.md](docs/phase5a-completion-report.md) for details.
 
 ## System Status
 
@@ -46,6 +64,24 @@ See [docs/system-maturity.md](docs/system-maturity.md) for current maturity asse
 
 **Testing:**
 - `pnpm run test:smoke` - Run smoke tests with real provider (requires API key)
+- `pnpm run test:smoke-real` - Run real provider smoke test (OpenAI/Anthropic)
+
+**Phase 5A Commands:**
+```bash
+# File backend (default)
+pnpm run dev:cli workflow "your idea"
+
+# SQLite backend (experimental)
+PERSISTENCE_BACKEND=sqlite pnpm run dev:cli workflow "your idea"
+
+# Real provider (opt-in, requires API key)
+PROVIDER_MODE=real OPENAI_API_KEY=sk-xxx pnpm run dev:cli workflow "your idea"
+
+# Real provider smoke test
+OPENAI_API_KEY=sk-xxx pnpm run test:smoke-real
+```
+
+See [docs/configuration.md](docs/configuration.md) and [docs/support-matrix.md](docs/support-matrix.md) for details.
 
 **Individual Checks:**
 - `pnpm run check:docs` - Validate documentation

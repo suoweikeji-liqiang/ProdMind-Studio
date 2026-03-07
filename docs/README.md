@@ -39,6 +39,15 @@ Documentation is grouped for fast engineering execution.
 - [phase4c-deferred.md](phase4c-deferred.md) - Deferred items for Phase 5
 - [phase4c1-completion-report.md](phase4c1-completion-report.md) - Phase 4C.1 closing summary
 
+## Foundation Enhancement (Phase 5A)
+- [phase5a-completion-report.md](phase5a-completion-report.md) - Phase 5A summary
+- [phase5a-persistence-boundary.md](phase5a-persistence-boundary.md) - Persistence abstraction
+- [phase5a-provider-boundary.md](phase5a-provider-boundary.md) - Provider integration boundary
+- [data-compatibility.md](data-compatibility.md) - Backend compatibility rules
+- [smoke-testing.md](smoke-testing.md) - Real provider smoke workflow
+- [configuration.md](configuration.md) - Backend/provider configuration
+- [phase5a-deferred.md](phase5a-deferred.md) - Deferred items for Phase 5B
+
 ## Execution
 - [ci-plan.md](ci-plan.md)
 - [runbook.md](runbook.md) - Practical operator guide for running the system

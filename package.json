@@ -8,6 +8,7 @@
     "typecheck": "node scripts/run-workspace-task.mjs typecheck",
     "test": "node scripts/run-workspace-task.mjs test",
     "test:smoke": "SMOKE_TEST_REAL_PROVIDER=1 pnpm run test",
+    "test:smoke-real": "node scripts/smoke-real-provider.mjs",
     "build": "node scripts/run-workspace-task.mjs build",
     "check:docs": "node scripts/check-docs.mjs",
     "check:boundaries": "node scripts/check-boundaries.mjs",
