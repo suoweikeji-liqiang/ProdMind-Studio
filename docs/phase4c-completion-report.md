@@ -258,16 +258,16 @@ See `docs/phase4c-deferred.md` for complete list.
 - ✓ Quality gates enforced
 
 **System Maturity:**
-- **Functional**: Production-ready for single-user, local usage
-- **Scalability**: File-based, suitable for small-medium workloads
+- **Functional**: Internal pilot ready for single-user, local usage
+- **Scalability**: File-based, suitable for small workloads
 - **Reliability**: Manual recovery, basic error handling
 - **Observability**: Timing and error tracking, no real-time metrics
 
 **Ready For:**
 - Local development workflows
 - Single-user product exploration
-- Proof-of-concept demonstrations
-- Small-scale production usage
+- Internal pilot demonstrations
+- Proof-of-concept validation
 
 **Not Ready For:**
 - Multi-user collaboration

@@ -7,11 +7,14 @@
     "lint": "node scripts/lint.mjs && node scripts/run-workspace-task.mjs lint",
     "typecheck": "node scripts/run-workspace-task.mjs typecheck",
     "test": "node scripts/run-workspace-task.mjs test",
+    "test:smoke": "SMOKE_TEST_REAL_PROVIDER=1 pnpm run test",
     "build": "node scripts/run-workspace-task.mjs build",
     "check:docs": "node scripts/check-docs.mjs",
     "check:boundaries": "node scripts/check-boundaries.mjs",
     "check:forbidden-deps": "node scripts/check-forbidden-deps.mjs",
-    "check:all": "pnpm run check:docs && pnpm run check:boundaries && pnpm run check:forbidden-deps && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build"
+    "check:all": "pnpm run check:docs && pnpm run check:boundaries && pnpm run check:forbidden-deps && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build",
+    "dev:cli": "cd apps/cli && pnpm run build && node dist/index.js",
+    "dev:web": "cd apps/web && pnpm run build && node dist/server.js"
   },
   "devDependencies": {
     "typescript": "^5.9.3",

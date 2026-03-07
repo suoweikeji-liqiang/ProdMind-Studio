@@ -5,10 +5,19 @@ Unified repository for a layered product system:
 - decision state orchestration
 - structured requirement asset accumulation
 
+**Current Stage:** Phase 4C complete - internal pilot ready for single-user usage
+
 This repo is intentionally migration-first:
 - no large code copy from source repos
 - engine boundaries before shell implementation
 - standards and quality gates before feature volume
+
+## System Status
+
+See [docs/system-maturity.md](docs/system-maturity.md) for current maturity assessment.
+
+**Ready for:** Local development, single-user exploration, internal pilot demonstrations
+**Not ready for:** Multi-user collaboration, production deployment at scale
 
 ## Monorepo Layout
 - `apps/cli` - CLI shell (thin composition layer)
@@ -23,14 +32,27 @@ This repo is intentionally migration-first:
 - `tests/` - shared fixtures, golden outputs, fakes, helpers
 
 ## Local Commands
-- `pnpm run lint`
-- `pnpm run typecheck`
-- `pnpm run test`
-- `pnpm run build`
-- `pnpm run check:docs`
-- `pnpm run check:boundaries`
-- `pnpm run check:forbidden-deps`
-- `pnpm run check:all`
+
+**Quality Gates:**
+- `pnpm run check:all` - Run all quality gates (recommended before commit)
+- `pnpm run lint` - Lint all packages
+- `pnpm run typecheck` - Type check all packages
+- `pnpm run test` - Run all tests
+- `pnpm run build` - Build all packages
+
+**Development:**
+- `pnpm run dev:cli` - Build and run CLI
+- `pnpm run dev:web` - Build and run Web server
+
+**Testing:**
+- `pnpm run test:smoke` - Run smoke tests with real provider (requires API key)
+
+**Individual Checks:**
+- `pnpm run check:docs` - Validate documentation
+- `pnpm run check:boundaries` - Validate module boundaries
+- `pnpm run check:forbidden-deps` - Check for forbidden dependencies
+
+See [docs/runbook.md](docs/runbook.md) for detailed operational guide.
 
 ## Standards Entry
 See [docs/README.md](D:/work/product-unification/ProdMind-Studio/docs/README.md) for grouped navigation:
