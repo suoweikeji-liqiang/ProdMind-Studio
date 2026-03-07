@@ -1,2 +1,4 @@
-// Placeholder web shell entry. UI implementation is intentionally deferred.
-export {};
+// Web composition layer entry point
+export { workflowRouter } from './routes/workflow.js';
+export { renderHome, renderWorkflow, renderResults } from './views/index.js';
+

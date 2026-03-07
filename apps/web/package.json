@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev": "node --watch dist/server.js",
+    "start": "node dist/server.js",
     "lint": "node ../../scripts/lint.mjs --scope src",
     "typecheck": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json --noEmit",
     "test": "node ../../scripts/test-package.mjs --scope . --package @prodmind/app-web",
@@ -14,7 +16,12 @@
     "@prodmind/decision-engine": "workspace:*",
     "@prodmind/asset-engine": "workspace:*",
     "@prodmind/shared-types": "workspace:*",
-    "@prodmind/llm-adapter": "workspace:*"
+    "@prodmind/llm-adapter": "workspace:*",
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.11.0"
   },
   "exports": {
     ".": "./dist/index.js"

@@ -249,23 +249,49 @@ From `prodmind-v2`:
 - Phase 4B: Web UI composition layer
 - Phase 5: Convergence and hardening
 
-## Phase 4B: Web Composition Layer (DEFERRED)
+## Phase 4B: Web Composition Layer (IN PROGRESS)
 
 ### Goal
-- Wire `apps/web` as thin composition layer over unified engines.
+- Implement thin Web composition layer that wraps validated CLI workflow into minimal usable Web interface.
+
+### Status: IN PROGRESS (2026-03-07)
+
+### Scope
+- ✅ Define Web composition boundary (see phase4b-web-boundary.md)
+- 🔄 Establish minimal Web app shell (landing, workflow, results pages)
+- 🔄 Implement workflow execution entry from Web
+- 🔄 Add staged progress feedback (queued → running → complete)
+- 🔄 Render structured results (not chat bubbles)
+- 🔄 Add Web E2E happy path test
+- 🔄 Keep Web thin and scope controlled
+- ❌ NOT implementing auth/multi-user (deferred to Phase 4C+)
+- ❌ NOT implementing heavy frontend architecture (deferred)
+
+### Work Items
+1. Define Web responsibility boundary and forbidden patterns
+2. Establish minimal page structure (landing, workflow, results)
+3. Implement workflow execution entry (idea → challenge → decision → assets)
+4. Add stage-level progress feedback (not just spinner)
+5. Render structured results with proper semantic display
+6. Add Web-level E2E happy path test
+7. Document deferred items (auth, collaboration, planning system UI)
+8. Validate boundaries and quality gates
 
 ### Source Inputs
 - Web shell references:
   - `prodmind-v1/prodmind-web/src/app/**`
   - `prodmind-v2/prodmind2-web/src/app/**` + `src/components/**`
-
-### Work Items
-- Implement unified API composition without duplicating engine logic.
-- Provide adapter-based transport (SSE/HTTP) that maps engine events to shell channels.
+- Validated CLI workflow from Phase 4A
 
 ### Risks
 - Risk: reintroducing engine logic into route handlers/components.
-  - Mitigation: lint rule + boundary tests on forbidden imports.
+  - Mitigation: strict boundary documentation (phase4b-web-boundary.md) + quality gates
+- Risk: scope creep into heavy product frontend.
+  - Mitigation: explicit deferred items list + thin composition principle
+
+### Next Steps
+- Phase 4C: Advanced Web features (auth, collaboration)
+- Phase 5: Convergence and hardening
 
 ## Phase 5: Convergence, Hardening, and Cleanup
 
