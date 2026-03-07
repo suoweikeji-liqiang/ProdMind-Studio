@@ -99,6 +99,56 @@ node dist/index.js workflow "same idea" ./same-path
 node dist/index.js history show <runId>
 ```
 
+## Observability (Phase 5B)
+
+### Workflow Visibility
+
+**During Execution:**
+- Run ID displayed at start
+- Phase progression shown (1/3, 2/3, 3/3)
+- Real-time status updates
+
+**After Completion:**
+- Workflow summary with run ID, status, duration
+- Provider usage statistics
+- Success/failure indicators
+
+**On Failure:**
+- Failed phase identification
+- Error message with code
+- Guidance to view full details
+
+### Viewing Metrics
+
+Metrics are collected automatically during workflow execution:
+
+```bash
+# Workflow summary shown after completion
+node dist/index.js workflow "idea"
+# Output includes:
+# - Run ID
+# - Status (✓ Success / ✗ Failed)
+# - Duration
+# - Provider requests
+```
+
+### Diagnosing Failures
+
+1. **Note the Run ID** from failure output
+2. **View full details:**
+   ```bash
+   node dist/index.js history show <runId>
+   ```
+3. **Check phase status** to identify failure point
+4. **Review error code** to understand failure type
+5. **Determine if retryable** based on error type
+
+**Common Error Codes:**
+- `PROVIDER_RATE_LIMIT` - Retryable, wait and retry
+- `PROVIDER_AUTH_FAILED` - Check API keys
+- `PERSISTENCE_WRITE_FAILED` - Check disk space/permissions
+- `WORKFLOW_PHASE_FAILED` - Check phase-specific logs
+
 Check the `error` field and `phases` status.
 
 ## Testing

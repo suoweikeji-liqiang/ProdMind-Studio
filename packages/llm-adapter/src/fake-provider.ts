@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import type { CorrelationContext } from '@prodmind/shared-types';
 import type { ProviderMetadata } from './types.js';
 
 export type LLMMessage = {
@@ -7,14 +8,14 @@ export type LLMMessage = {
 };
 
 export interface LLMAdapter {
-  streamText(messages: LLMMessage[], onToken: (token: string) => void): Promise<string>;
-  generateStructured<T>(messages: LLMMessage[], schema: z.ZodSchema<T>): Promise<T>;
+  streamText(messages: LLMMessage[], onToken: (token: string) => void, correlation?: CorrelationContext): Promise<string>;
+  generateStructured<T>(messages: LLMMessage[], schema: z.ZodSchema<T>, correlation?: CorrelationContext): Promise<T>;
   getMetadata(): ProviderMetadata;
 }
 
 export function createFakeProvider(responses: Record<string, unknown>): LLMAdapter {
   return {
-    async streamText(messages: LLMMessage[], onToken: (token: string) => void): Promise<string> {
+    async streamText(messages: LLMMessage[], onToken: (token: string) => void, _correlation?: CorrelationContext): Promise<string> {
       const key = messages[messages.length - 1]?.content || 'default';
       const response = (responses[key] as string) || 'fake response';
 
@@ -25,7 +26,7 @@ export function createFakeProvider(responses: Record<string, unknown>): LLMAdapt
       return response;
     },
 
-    async generateStructured<T>(messages: LLMMessage[], schema: z.ZodSchema<T>): Promise<T> {
+    async generateStructured<T>(messages: LLMMessage[], schema: z.ZodSchema<T>, _correlation?: CorrelationContext): Promise<T> {
       const key = messages[messages.length - 1]?.content || 'default';
       const response = responses[key];
 

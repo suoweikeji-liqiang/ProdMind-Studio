@@ -4,8 +4,9 @@ import { createAnthropic } from '@ai-sdk/anthropic';
 import { jsonrepair } from 'jsonrepair';
 import type { LanguageModel, CoreMessage } from 'ai';
 import type { z } from 'zod';
+import type { CorrelationContext } from '@prodmind/shared-types';
 import type { ProviderError, ProviderMetadata } from './types.js';
-import { notifyProviderEvent } from './observability.js';
+import { emitProviderStart, emitProviderEnd, emitProviderError } from './observability.js';
 
 export type LLMMessage = {
   role: 'user' | 'assistant' | 'system';
@@ -15,8 +16,8 @@ export type LLMMessage = {
 export type LLMProvider = 'openai' | 'anthropic';
 
 export interface LLMAdapter {
-  streamText(messages: LLMMessage[], onToken: (token: string) => void): Promise<string>;
-  generateStructured<T>(messages: LLMMessage[], schema: z.ZodSchema<T>): Promise<T>;
+  streamText(messages: LLMMessage[], onToken: (token: string) => void, correlation?: CorrelationContext): Promise<string>;
+  generateStructured<T>(messages: LLMMessage[], schema: z.ZodSchema<T>, correlation?: CorrelationContext): Promise<T>;
   getMetadata(): ProviderMetadata;
 }
 
@@ -61,14 +62,11 @@ export function createLLMAdapter(config: LLMConfig): LLMAdapter {
   }
 
   return {
-    async streamText(messages: LLMMessage[], onToken: (token: string) => void): Promise<string> {
+    async streamText(messages: LLMMessage[], onToken: (token: string) => void, correlation?: CorrelationContext): Promise<string> {
       const startTime = Date.now();
-      notifyProviderEvent({
-        provider: config.provider,
-        model: config.modelId,
-        operation: 'streamText',
-        startTime,
-      });
+      if (correlation) {
+        emitProviderStart(correlation, config.provider, config.modelId, 'streamText');
+      }
 
       try {
         const result = await sdkStreamText({
@@ -82,39 +80,25 @@ export function createLLMAdapter(config: LLMConfig): LLMAdapter {
           onToken(delta);
         }
 
-        notifyProviderEvent({
-          provider: config.provider,
-          model: config.modelId,
-          operation: 'streamText',
-          startTime,
-          endTime: Date.now(),
-          success: true,
-        });
+        if (correlation) {
+          emitProviderEnd(correlation, config.provider, config.modelId, 'streamText', Date.now() - startTime);
+        }
 
         return fullText;
       } catch (error) {
         const normalized = normalizeError(error);
-        notifyProviderEvent({
-          provider: config.provider,
-          model: config.modelId,
-          operation: 'streamText',
-          startTime,
-          endTime: Date.now(),
-          success: false,
-          error: `[${normalized.type}] ${normalized.message}`,
-        });
+        if (correlation) {
+          emitProviderError(correlation, config.provider, config.modelId, 'streamText', Date.now() - startTime, normalized.type, normalized.retryable);
+        }
         throw new Error(`[${normalized.type}] ${normalized.message}`);
       }
     },
 
-    async generateStructured<T>(messages: LLMMessage[], schema: z.ZodSchema<T>): Promise<T> {
+    async generateStructured<T>(messages: LLMMessage[], schema: z.ZodSchema<T>, correlation?: CorrelationContext): Promise<T> {
       const startTime = Date.now();
-      notifyProviderEvent({
-        provider: config.provider,
-        model: config.modelId,
-        operation: 'generateStructured',
-        startTime,
-      });
+      if (correlation) {
+        emitProviderStart(correlation, config.provider, config.modelId, 'generateStructured');
+      }
 
       try {
         const result = await generateText({
@@ -123,14 +107,9 @@ export function createLLMAdapter(config: LLMConfig): LLMAdapter {
           experimental_output: Output.object({ schema }),
         });
 
-        notifyProviderEvent({
-          provider: config.provider,
-          model: config.modelId,
-          operation: 'generateStructured',
-          startTime,
-          endTime: Date.now(),
-          success: true,
-        });
+        if (correlation) {
+          emitProviderEnd(correlation, config.provider, config.modelId, 'generateStructured', Date.now() - startTime);
+        }
 
         return result.experimental_output as T;
       } catch (error) {
@@ -147,27 +126,16 @@ export function createLLMAdapter(config: LLMConfig): LLMAdapter {
 
           const result = schema.parse(parsed);
 
-          notifyProviderEvent({
-            provider: config.provider,
-            model: config.modelId,
-            operation: 'generateStructured',
-            startTime,
-            endTime: Date.now(),
-            success: true,
-          });
+          if (correlation) {
+            emitProviderEnd(correlation, config.provider, config.modelId, 'generateStructured', Date.now() - startTime);
+          }
 
           return result;
         } catch (fallbackError) {
           const normalized = normalizeError(error);
-          notifyProviderEvent({
-            provider: config.provider,
-            model: config.modelId,
-            operation: 'generateStructured',
-            startTime,
-            endTime: Date.now(),
-            success: false,
-            error: `[${normalized.type}] ${normalized.message}`,
-          });
+          if (correlation) {
+            emitProviderError(correlation, config.provider, config.modelId, 'generateStructured', Date.now() - startTime, normalized.type, normalized.retryable);
+          }
           throw new Error(`[${normalized.type}] ${normalized.message}`);
         }
       }

@@ -2,7 +2,7 @@
 
 ## Assessment Date: 2026-03-08
 
-## Stage: Phase 5A Complete
+## Stage: Phase 5B Complete
 
 ## Checklist
 
@@ -40,12 +40,18 @@
 - [x] Provider observability hooks added
 - [x] Provider metadata exposed
 
-### Observability
+### Observability (Phase 5B Enhanced)
+- [x] Structured observability contract defined
+- [x] Correlation context propagation implemented
+- [x] Structured events replace ad-hoc logging
+- [x] Failure diagnosis path established
+- [x] Minimal metrics surface exposed
+- [x] CLI displays observability summary
 - [x] Phase timing recorded
 - [x] Workflow status tracked
-- [x] Error messages captured
+- [x] Error messages normalized with context
 - [x] Run history accessible
-- [x] Provider events observable (Phase 5A)
+- [x] Provider events structured
 
 ### Quality Gates
 - [x] docs-check passes
@@ -57,11 +63,13 @@
 - [x] build passes (all workspaces)
 
 ### Documentation
-- [x] README describes current state (Phase 5A)
+- [x] README describes current state (Phase 5B)
 - [x] System maturity documented
-- [x] Runbook available (Phase 5A updated)
+- [x] Runbook available (Phase 5B updated)
 - [x] System map available
 - [x] Phase 5A docs indexed
+- [x] Phase 5B docs indexed
+- [x] Observability standards documented
 - [x] Known limitations documented
 - [x] Backend/provider configuration documented
 

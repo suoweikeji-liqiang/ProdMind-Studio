@@ -8,6 +8,7 @@ import type { ChallengeToAssetHandoff, ChallengeArtifact, WorkflowRun, PhaseExec
 import * as fs from 'fs';
 import * as path from 'path';
 import { detectCompletedPhases } from './recovery.js';
+import { setupObservability, displayWorkflowSummary, displayFailureSummary } from './observability.js';
 
 interface WorkflowStep {
   stepId: string;
@@ -254,8 +255,10 @@ export async function showHistory(projectPath: string, runId: string): Promise<v
 }
 
 export async function runWorkflow(idea: string, projectPath: string): Promise<ExecutionSummary> {
+  setupObservability();
   console.log('Starting full workflow: idea -> challenge -> decision -> assets');
 
+  const workflowStartTime = Date.now();
   const execution = createWorkflowExecution(idea);
   let current = execution;
   const historyStore = createHistoryStore();
@@ -372,6 +375,8 @@ export async function runWorkflow(idea: string, projectPath: string): Promise<Ex
     console.log(`  - Completed steps: ${summary.completedSteps}/${summary.totalSteps}`);
     console.log(`  - Artifacts: ${summary.artifacts.length}`);
 
+    displayWorkflowSummary(run.runId, true, Date.now() - workflowStartTime);
+
     return summary;
   } catch (error) {
     const failedStep = current.steps.find((s: WorkflowStep) => s.status === 'running');
@@ -386,6 +391,7 @@ export async function runWorkflow(idea: string, projectPath: string): Promise<Ex
     const failedPhase = run.phases.find(p => p.status === 'running');
     if (failedPhase) {
       await updatePhase(failedPhase.phase, 'failed', run.error);
+      displayFailureSummary(run.runId, failedPhase.phase, run.error);
     }
 
     await historyStore.updateRun(projectPath, run);

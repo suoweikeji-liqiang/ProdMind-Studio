@@ -59,7 +59,7 @@ const allowedInternalDeps = {
     "@prodmind/llm-adapter",
   ],
   "@prodmind/asset-engine": ["@prodmind/shared-types"],
-  "@prodmind/llm-adapter": [],
+  "@prodmind/llm-adapter": ["@prodmind/shared-types"],
   "@prodmind/shared-types": [],
 };
 

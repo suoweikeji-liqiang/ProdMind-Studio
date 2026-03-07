@@ -5,14 +5,34 @@ Unified repository for a layered product system:
 - decision state orchestration
 - structured requirement asset accumulation
 
-**Current Stage:** Phase 5A complete - enhanced persistence and provider foundations
+**Current Stage:** Phase 5B complete - structured observability foundation
 
 This repo is intentionally migration-first:
 - no large code copy from source repos
 - engine boundaries before shell implementation
 - standards and quality gates before feature volume
 
-## Phase 5A Enhancements
+## Phase 5B: Structured Observability
+
+**Observability Contract:**
+- Structured events (workflow, provider, persistence, recovery)
+- Correlation context propagation (runId, phaseId, stepId)
+- Normalized error diagnosis with retryable signals
+- Minimal metrics surface (in-memory aggregation)
+
+**CLI Visibility:**
+- Workflow summary with run ID, status, duration
+- Provider usage statistics
+- Failure diagnosis with error codes
+
+**Documentation:**
+- Observability standards and operator guide
+- Failure diagnosis workflow
+- Metrics collection and display
+
+See [docs/phase5b-completion-report.md](docs/phase5b-completion-report.md) for details.
+
+## Phase 5A: Enhanced Foundations
 
 **Persistence:**
 - Abstraction boundary defined (`PersistenceRepository` interface)
