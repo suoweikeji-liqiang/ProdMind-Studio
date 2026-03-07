@@ -12,6 +12,9 @@
   "dependencies": {
     "@prodmind/shared-types": "workspace:*"
   },
+  "devDependencies": {
+    "@types/node": "^22.0.0"
+  },
   "exports": {
     ".": "./dist/index.js"
   }

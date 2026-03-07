@@ -14,6 +14,7 @@
     "check:all": "pnpm run check:docs && pnpm run check:boundaries && pnpm run check:forbidden-deps && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build"
   },
   "devDependencies": {
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^2.0.0"
   }
 }

@@ -20,6 +20,50 @@
 
 ## Phase Roadmap
 
+## Phase 1: Foundation + Asset Core ✅ COMPLETED
+
+### Goal
+- Build the migration substrate and land the first production-grade engine (`asset-engine`) with minimal shell.
+
+### Status: COMPLETED (2026-03-07)
+
+### Completed Work
+- ✅ Defined canonical shared contracts in `packages/shared-types`:
+  - `domain/project.ts`: ProjectState, Message, Projection, Compression
+  - `generation/llm.ts`: LLMAdapter, LLMMessage, LLMProvider, LLMConfig
+  - `persistence/store.ts`: ProjectStore, AssetWriter
+- ✅ Implemented `packages/asset-engine` kernel:
+  - `store.ts`: atomic persistence with crash recovery
+  - `writer.ts`: artifact compiler (idea/spec/acceptance/tasks)
+- ✅ Implemented `packages/llm-adapter` minimal provider interface:
+  - `provider.ts`: OpenAI/Anthropic support with fallback
+  - `fake-provider.ts`: deterministic testing provider
+- ✅ Added test coverage:
+  - Unit tests for store and fake provider
+  - Golden path test for complete asset generation
+- ✅ Workspace build/test scaffolding functional
+
+### Migrated Files
+From `requirement-co-builder`:
+- `src/state/schema.ts` → `packages/shared-types/src/domain/project.ts`
+- `src/state/index.ts` → `packages/asset-engine/src/store.ts`
+- `src/state/atomic.ts` → `packages/asset-engine/src/store.ts` (merged)
+- `src/output/artifacts.ts` → `packages/asset-engine/src/writer.ts`
+- `src/output/compile.ts` → `packages/asset-engine/src/writer.ts` (merged)
+- `src/adapters/llm.ts` → `packages/llm-adapter/src/provider.ts`
+
+### Intentionally NOT Migrated
+- CLI shell (commander, inquirer, chalk, ora)
+- Dialogue engine (dialogue/*)
+- Display utilities (display/*)
+- Research features (projects/research.ts)
+- Config management (config/*)
+- Utility functions (utils/id.ts, utils/paths.ts)
+- Project listing/management
+
+### Next Steps
+See [phase1-asset-engine.md](./phase1-asset-engine.md) for detailed Phase 1 documentation.
+
 ## Phase 1: Foundation + Asset Core
 
 ### Goal

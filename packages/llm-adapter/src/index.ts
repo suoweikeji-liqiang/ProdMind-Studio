@@ -1,3 +1,3 @@
-// Phase scaffold only. Adapter contract implementation comes in Phase 1.
-// Boundary: provider details stay here and must not leak to engines.
-export {};
+export { createLLMAdapter } from './provider.js';
+export { createFakeProvider } from './fake-provider.js';
+export type { LLMAdapter, LLMMessage, LLMConfig, LLMProvider } from './provider.js';
