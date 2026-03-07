@@ -129,6 +129,34 @@ From `prodmind-v1`:
 ### Next Steps
 See [phase2-challenge-engine.md](./phase2-challenge-engine.md) for detailed Phase 2 documentation.
 
+## Phase 2.5: Challenge-Asset Integration ✅ COMPLETED
+
+### Goal
+- Bridge challenge-engine and asset-engine before Phase 3 to stabilize contracts.
+
+### Status: COMPLETED (2026-03-07)
+
+### Completed Work
+- ✅ Defined challenge-to-asset handoff contract
+- ✅ Implemented minimal multi-round session state
+- ✅ Added convergence and stop-condition logic
+- ✅ Connected challenge-engine to asset-engine
+- ✅ Added golden path for multi-round persistence
+
+### Key Contracts Introduced
+- `ChallengeArtifact`, `ChallengeToAssetHandoff`
+- `ChallengeSessionState`, `ChallengeProgressStatus`
+- `Hypothesis`, `FalsificationCheck`, `NextAction`
+
+### Deferred to Phase 3+
+- decision-engine business logic
+- challenge-decision coordination
+- CLI/Web shells
+- Advanced convergence strategies
+
+### Next Steps
+See [phase2_5-challenge-asset-integration.md](./phase2_5-challenge-asset-integration.md) for detailed documentation.
+
 ## Phase 2: Challenge Engine Extraction
 
 ### Goal
