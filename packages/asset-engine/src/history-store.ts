@@ -1,6 +1,5 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import type { WorkflowRun, WorkflowResult } from '@prodmind/shared-types';
+import type { PersistenceRepository, PersistenceConfig, WorkflowRun, WorkflowResult } from '@prodmind/shared-types';
+import { createRepository } from './persistence/factory.js';
 
 export interface HistoryStore {
   saveRun(projectPath: string, run: WorkflowRun): Promise<void>;
@@ -11,74 +10,43 @@ export interface HistoryStore {
   getResult(projectPath: string, runId: string): Promise<WorkflowResult | null>;
 }
 
-function getHistoryDir(projectPath: string): string {
-  return path.join(projectPath, '.prodmind', 'history');
-}
+export function createHistoryStore(config?: PersistenceConfig): HistoryStore {
+  const repos = new Map<string, PersistenceRepository>();
 
-function getRunDir(projectPath: string, runId: string): string {
-  return path.join(getHistoryDir(projectPath), runId);
-}
-
-function ensureHistoryDir(projectPath: string): void {
-  const dir = getHistoryDir(projectPath);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+  function getRepo(projectPath: string): PersistenceRepository {
+    if (!repos.has(projectPath)) {
+      const repoConfig: PersistenceConfig = config || { backend: 'file', basePath: projectPath };
+      if (!config) {
+        repoConfig.basePath = projectPath;
+      }
+      repos.set(projectPath, createRepository(repoConfig));
+    }
+    return repos.get(projectPath)!;
   }
-}
 
-export function createHistoryStore(): HistoryStore {
   return {
     async saveRun(projectPath: string, run: WorkflowRun): Promise<void> {
-      ensureHistoryDir(projectPath);
-
-      const runDir = getRunDir(projectPath, run.runId);
-      if (!fs.existsSync(runDir)) {
-        fs.mkdirSync(runDir, { recursive: true });
-      }
-
-      const runPath = path.join(runDir, 'run.json');
-      fs.writeFileSync(runPath, JSON.stringify(run, null, 2), 'utf8');
-
-      const runsFile = path.join(getHistoryDir(projectPath), 'runs.jsonl');
-      const line = JSON.stringify({ runId: run.runId, idea: run.idea, status: run.status, startedAt: run.startedAt }) + '\n';
-      fs.appendFileSync(runsFile, line, 'utf8');
+      await getRepo(projectPath).saveRun(run);
     },
 
     async updateRun(projectPath: string, run: WorkflowRun): Promise<void> {
-      const runPath = path.join(getRunDir(projectPath, run.runId), 'run.json');
-      fs.writeFileSync(runPath, JSON.stringify(run, null, 2), 'utf8');
+      await getRepo(projectPath).updateRun(run);
     },
 
     async saveResult(projectPath: string, result: WorkflowResult): Promise<void> {
-      const resultPath = path.join(getRunDir(projectPath, result.runId), 'result.json');
-      fs.writeFileSync(resultPath, JSON.stringify(result, null, 2), 'utf8');
+      await getRepo(projectPath).saveResult(result);
     },
 
     async listRuns(projectPath: string): Promise<WorkflowRun[]> {
-      const runsFile = path.join(getHistoryDir(projectPath), 'runs.jsonl');
-      if (!fs.existsSync(runsFile)) return [];
-
-      const lines = fs.readFileSync(runsFile, 'utf8').trim().split('\n').filter(l => l);
-      const runIds = lines.map(l => JSON.parse(l).runId).reverse();
-
-      const runs: WorkflowRun[] = [];
-      for (const runId of runIds) {
-        const run = await this.getRun(projectPath, runId);
-        if (run) runs.push(run);
-      }
-      return runs;
+      return getRepo(projectPath).listRuns();
     },
 
     async getRun(projectPath: string, runId: string): Promise<WorkflowRun | null> {
-      const runPath = path.join(getRunDir(projectPath, runId), 'run.json');
-      if (!fs.existsSync(runPath)) return null;
-      return JSON.parse(fs.readFileSync(runPath, 'utf8'));
+      return getRepo(projectPath).getRun(runId);
     },
 
     async getResult(projectPath: string, runId: string): Promise<WorkflowResult | null> {
-      const resultPath = path.join(getRunDir(projectPath, runId), 'result.json');
-      if (!fs.existsSync(resultPath)) return null;
-      return JSON.parse(fs.readFileSync(resultPath, 'utf8'));
+      return getRepo(projectPath).getResult(runId);
     },
   };
 }

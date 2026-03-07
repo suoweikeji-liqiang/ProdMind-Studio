@@ -4,6 +4,8 @@ import { createAnthropic } from '@ai-sdk/anthropic';
 import { jsonrepair } from 'jsonrepair';
 import type { LanguageModel, CoreMessage } from 'ai';
 import type { z } from 'zod';
+import type { ProviderError, ProviderMetadata } from './types.js';
+import { notifyProviderEvent } from './observability.js';
 
 export type LLMMessage = {
   role: 'user' | 'assistant' | 'system';
@@ -15,6 +17,7 @@ export type LLMProvider = 'openai' | 'anthropic';
 export interface LLMAdapter {
   streamText(messages: LLMMessage[], onToken: (token: string) => void): Promise<string>;
   generateStructured<T>(messages: LLMMessage[], schema: z.ZodSchema<T>): Promise<T>;
+  getMetadata(): ProviderMetadata;
 }
 
 export interface LLMConfig {
@@ -22,6 +25,25 @@ export interface LLMConfig {
   apiKey: string;
   modelId: string;
   baseURL?: string;
+}
+
+function normalizeError(error: unknown): ProviderError {
+  const err = error as any;
+
+  if (err?.status === 429 || err?.message?.includes('rate limit')) {
+    return { type: 'rate_limit', message: 'Rate limit exceeded', retryable: true, originalError: error };
+  }
+  if (err?.status === 401 || err?.status === 403) {
+    return { type: 'auth', message: 'Authentication failed', retryable: false, originalError: error };
+  }
+  if (err?.code === 'ECONNREFUSED' || err?.code === 'ETIMEDOUT') {
+    return { type: 'network', message: 'Network error', retryable: true, originalError: error };
+  }
+  if (err?.status === 400) {
+    return { type: 'invalid_request', message: 'Invalid request', retryable: false, originalError: error };
+  }
+
+  return { type: 'unknown', message: err?.message || 'Unknown error', retryable: false, originalError: error };
 }
 
 export function createLLMAdapter(config: LLMConfig): LLMAdapter {
@@ -40,40 +62,126 @@ export function createLLMAdapter(config: LLMConfig): LLMAdapter {
 
   return {
     async streamText(messages: LLMMessage[], onToken: (token: string) => void): Promise<string> {
-      const result = await sdkStreamText({
-        model,
-        messages: messages as CoreMessage[],
+      const startTime = Date.now();
+      notifyProviderEvent({
+        provider: config.provider,
+        model: config.modelId,
+        operation: 'streamText',
+        startTime,
       });
 
-      let fullText = '';
-      for await (const delta of result.textStream) {
-        fullText += delta;
-        onToken(delta);
+      try {
+        const result = await sdkStreamText({
+          model,
+          messages: messages as CoreMessage[],
+        });
+
+        let fullText = '';
+        for await (const delta of result.textStream) {
+          fullText += delta;
+          onToken(delta);
+        }
+
+        notifyProviderEvent({
+          provider: config.provider,
+          model: config.modelId,
+          operation: 'streamText',
+          startTime,
+          endTime: Date.now(),
+          success: true,
+        });
+
+        return fullText;
+      } catch (error) {
+        const normalized = normalizeError(error);
+        notifyProviderEvent({
+          provider: config.provider,
+          model: config.modelId,
+          operation: 'streamText',
+          startTime,
+          endTime: Date.now(),
+          success: false,
+          error: `[${normalized.type}] ${normalized.message}`,
+        });
+        throw new Error(`[${normalized.type}] ${normalized.message}`);
       }
-      return fullText;
     },
 
     async generateStructured<T>(messages: LLMMessage[], schema: z.ZodSchema<T>): Promise<T> {
+      const startTime = Date.now();
+      notifyProviderEvent({
+        provider: config.provider,
+        model: config.modelId,
+        operation: 'generateStructured',
+        startTime,
+      });
+
       try {
         const result = await generateText({
           model,
           messages: messages as CoreMessage[],
           experimental_output: Output.object({ schema }),
         });
-        return result.experimental_output as T;
-      } catch {
-        const rawResult = await generateText({
-          model,
-          messages: messages as CoreMessage[],
+
+        notifyProviderEvent({
+          provider: config.provider,
+          model: config.modelId,
+          operation: 'generateStructured',
+          startTime,
+          endTime: Date.now(),
+          success: true,
         });
 
-        const rawText = rawResult.text;
-        const stripped = rawText.replace(/```(?:json)?\n?([\s\S]*?)```/g, '$1').trim();
-        const repaired = jsonrepair(stripped);
-        const parsed = JSON.parse(repaired) as unknown;
+        return result.experimental_output as T;
+      } catch (error) {
+        try {
+          const rawResult = await generateText({
+            model,
+            messages: messages as CoreMessage[],
+          });
 
-        return schema.parse(parsed);
+          const rawText = rawResult.text;
+          const stripped = rawText.replace(/```(?:json)?\n?([\s\S]*?)```/g, '$1').trim();
+          const repaired = jsonrepair(stripped);
+          const parsed = JSON.parse(repaired) as unknown;
+
+          const result = schema.parse(parsed);
+
+          notifyProviderEvent({
+            provider: config.provider,
+            model: config.modelId,
+            operation: 'generateStructured',
+            startTime,
+            endTime: Date.now(),
+            success: true,
+          });
+
+          return result;
+        } catch (fallbackError) {
+          const normalized = normalizeError(error);
+          notifyProviderEvent({
+            provider: config.provider,
+            model: config.modelId,
+            operation: 'generateStructured',
+            startTime,
+            endTime: Date.now(),
+            success: false,
+            error: `[${normalized.type}] ${normalized.message}`,
+          });
+          throw new Error(`[${normalized.type}] ${normalized.message}`);
+        }
       }
+    },
+
+    getMetadata(): ProviderMetadata {
+      return {
+        name: config.provider,
+        version: '1.0.0',
+        capabilities: {
+          streaming: true,
+          structuredOutput: true,
+        },
+      };
     },
   };
 }

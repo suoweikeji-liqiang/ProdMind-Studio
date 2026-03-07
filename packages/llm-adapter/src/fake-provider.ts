@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import type { ProviderMetadata } from './types.js';
 
 export type LLMMessage = {
   role: 'user' | 'assistant' | 'system';
@@ -8,6 +9,7 @@ export type LLMMessage = {
 export interface LLMAdapter {
   streamText(messages: LLMMessage[], onToken: (token: string) => void): Promise<string>;
   generateStructured<T>(messages: LLMMessage[], schema: z.ZodSchema<T>): Promise<T>;
+  getMetadata(): ProviderMetadata;
 }
 
 export function createFakeProvider(responses: Record<string, unknown>): LLMAdapter {
@@ -32,6 +34,17 @@ export function createFakeProvider(responses: Record<string, unknown>): LLMAdapt
       }
 
       return schema.parse(response);
+    },
+
+    getMetadata(): ProviderMetadata {
+      return {
+        name: 'fake',
+        version: '1.0.0',
+        capabilities: {
+          streaming: true,
+          structuredOutput: true,
+        },
+      };
     },
   };
 }

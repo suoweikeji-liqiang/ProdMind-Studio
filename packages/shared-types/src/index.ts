@@ -5,5 +5,6 @@ export * from './domain/challenge-session.js';
 export * from './domain/decision.js';
 export * from './domain/decision-artifact.js';
 export * from './persistence/store.js';
+export * from './persistence/repository.js';
 export * from './workflow/execution.js';
 export * from './workflow/history.js';
