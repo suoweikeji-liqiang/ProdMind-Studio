@@ -91,6 +91,44 @@ See [phase1-asset-engine.md](./phase1-asset-engine.md) for detailed Phase 1 docu
 - Risk: leaking shell semantics into engine.
   - Mitigation: no `commander`/readline in engine packages.
 
+## Phase 2: Challenge Engine Extraction ✅ COMPLETED
+
+### Goal
+- Extract adversarial debate kernel from `prodmind-v1`/legacy `prodmind-v2` into `packages/challenge-engine`.
+
+### Status: COMPLETED (2026-03-07)
+
+### Completed Work
+- ✅ Implemented `packages/challenge-engine` kernel:
+  - `roles.ts`: 4 roles with inline prompts (architect, assassin, userGhost, grounder)
+  - `rules.ts`: 5 conflict detection rules
+  - `runner.ts`: single round execution + summary builder
+- ✅ Extended `packages/shared-types`:
+  - `domain/challenge.ts`: ChallengeSession, ChallengeRound, ChallengeSummary, etc.
+- ✅ Added test coverage:
+  - Unit tests for all rule detection functions
+  - Golden path test for complete challenge round
+
+### Migrated Files
+From `prodmind-v1`:
+- `prodmind-cli/src/roles/index.ts` → `packages/challenge-engine/src/roles.ts` (simplified)
+- `prodmind-cli/src/consensus-check.ts` → `packages/challenge-engine/src/rules.ts`
+- `prodmind-cli/src/debate.ts` → `packages/challenge-engine/src/runner.ts` (core logic only)
+- `prodmind-cli/src/storage.ts` types → `packages/shared-types/src/domain/challenge.ts`
+
+### Intentionally NOT Migrated
+- CLI interaction loop (inquirer prompts)
+- Terminal display (chalk, dividers)
+- Session persistence (saveSession, listSessions)
+- Markdown export
+- Config management
+- Prompt file loading
+- Fallback generation
+- Multi-round history management
+
+### Next Steps
+See [phase2-challenge-engine.md](./phase2-challenge-engine.md) for detailed Phase 2 documentation.
+
 ## Phase 2: Challenge Engine Extraction
 
 ### Goal
