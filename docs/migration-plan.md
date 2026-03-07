@@ -1,0 +1,157 @@
+# Migration Plan (Layered Refactor, Not Code Dump)
+
+## Total Principles
+- Do not copy old repos wholesale.
+- Extract kernel first, shell later.
+- Keep all new docs/code inside `ProdMind-Studio`.
+- Every migration step must map to concrete source files.
+- Preserve behavior through contracts and tests, not by preserving old directory shapes.
+- Prefer incremental compatibility shims over framework-coupled rewrites.
+
+## Why Phase 1 Starts Where It Starts
+- Target product is a pipeline from challenge/decision to structured assets.
+- Asset accumulation is the final value sink and gives stable integration contracts for later engines.
+- `requirement-co-builder` has the cleanest kernel modularity (state/projects/output/adapter), least UI coupling, and broad tests.
+- Therefore Phase 1 should establish:
+  - `asset-engine` base
+  - shared cross-engine contracts in `shared-types`
+  - provider abstraction in `llm-adapter`
+- This enables challenge/decision extraction to plug into a stable artifact backend, instead of coupling directly to CLI/Web shells.
+
+## Phase Roadmap
+
+## Phase 1: Foundation + Asset Core
+
+### Goal
+- Build the migration substrate and land the first production-grade engine (`asset-engine`) with minimal shell.
+
+### Source Inputs
+- Primary: `requirement-co-builder`
+- Secondary references:
+  - `prodmind-v1` export contracts
+  - `prodmind-v2/prodmind2-*` snapshot/report concepts
+
+### Work Items
+- Define canonical shared contracts in `packages/shared-types`.
+- Implement `packages/asset-engine` kernel:
+  - state schema + atomic persistence
+  - project lifecycle
+  - snapshot/research
+  - artifact compiler (`spec/acceptance/tasks`)
+- Implement `packages/llm-adapter` minimal provider interface (without wiring UI).
+- Add thin compile-time scaffolding for workspace build/test.
+
+### Risks
+- Risk: overfitting assets to current CLI file layout.
+  - Mitigation: design DTO-level contracts first in `shared-types`.
+- Risk: leaking shell semantics into engine.
+  - Mitigation: no `commander`/readline in engine packages.
+
+## Phase 2: Challenge Engine Extraction
+
+### Goal
+- Extract adversarial debate kernel from `prodmind-v1`/legacy `prodmind-v2` into `packages/challenge-engine`.
+
+### Source Inputs
+- Primary:
+  - `prodmind-v1/prodmind-cli/src/{debate.ts,consensus-check.ts,roles/index.ts,export.ts,storage.ts}`
+  - `prodmind-v1/prodmind-web/src/lib/engine/{debate.ts,roles.ts,consensus-check.ts,convergence.ts,export.ts}`
+- Patch reference:
+  - `prodmind-v2/prodmind-web` differences (falsification regex, typed role stream, DB/init fixes)
+
+### Work Items
+- Normalize round protocol and conflict-rule pipeline as framework-agnostic functions.
+- Define challenge event stream contracts in `shared-types`.
+- Move prompt loading and role-call adapters behind `llm-adapter`.
+- Port convergence logic and export formatting contracts.
+
+### Risks
+- Risk: behavior drift between CLI and Web variants.
+  - Mitigation: create golden tests using historical session fixtures.
+- Risk: multilingual regex/prompt assumptions break.
+  - Mitigation: include CN/EN test cases for conflict/falsification checks.
+
+## Phase 3: Decision Engine Extraction
+
+### Goal
+- Extract stateful multi-agent decision orchestration into `packages/decision-engine`.
+
+### Source Inputs
+- Primary:
+  - `prodmind-v2/prodmind2-cli/src/{state.ts,scheduler.ts,session.ts,storage.ts,roles/index.ts,export.ts}`
+  - `prodmind-v2/prodmind2-web/src/lib/engine/{debate.ts,scheduler.ts,context-builder.ts,parsers.ts,roles.ts,export.ts}`
+  - `prodmind-v2/prodmind2-web/supabase/migrations/001_initial_schema.sql`
+
+### Work Items
+- Canonicalize decision state tree and transitions.
+- Isolate scheduler policy and parser extraction.
+- Abstract snapshot/confidence calculation from storage backend.
+- Add backend-agnostic persistence interface (file/DB adapters are shells).
+
+### Risks
+- Risk: hard coupling to Supabase schema and auth context.
+  - Mitigation: split storage adapter interface from domain core.
+- Risk: parser fragility from prompt format drift.
+  - Mitigation: parser tests with variant outputs.
+
+## Phase 4: Shell Composition (CLI + Web)
+
+### Goal
+- Wire `apps/cli` and `apps/web` as thin composition layers over unified engines.
+
+### Source Inputs
+- CLI shell references:
+  - `prodmind-v1/prodmind-cli/src/index.ts`
+  - `prodmind-v2/prodmind2-cli/src/index.ts`
+  - `requirement-co-builder/src/bin/req.ts`
+- Web shell references:
+  - `prodmind-v1/prodmind-web/src/app/**`
+  - `prodmind-v2/prodmind2-web/src/app/**` + `src/components/**`
+
+### Work Items
+- Implement unified command and API composition without duplicating engine logic.
+- Keep old UI behavior parity where required, but no early visual unification.
+- Provide adapter-based transport (SSE/HTTP) that maps engine events to shell channels.
+
+### Risks
+- Risk: reintroducing engine logic into route handlers/components.
+  - Mitigation: lint rule + boundary tests on forbidden imports.
+
+## Phase 5: Convergence, Hardening, and Cleanup
+
+### Goal
+- Stabilize behavior, validate migration completeness, and retire redundant paths.
+
+### Source Inputs
+- All migrated packages and test fixtures from three source repos.
+
+### Work Items
+- End-to-end scenario suites:
+  - challenge-only
+  - decision-only
+  - challenge -> decision -> asset pipeline
+- Regression checks for export artifacts.
+- Document final architecture and deprecate source-specific assumptions.
+
+### Risks
+- Risk: silent regressions in output quality.
+  - Mitigation: snapshot-based artifact diff tests and UAT baselines.
+
+## Phase-to-Repo Matrix
+- Phase 1: mainly `requirement-co-builder` (+ minor references to `prodmind-v1/v2`)
+- Phase 2: mainly `prodmind-v1` (+ legacy patches from `prodmind-v2/prodmind-web`)
+- Phase 3: mainly `prodmind-v2/prodmind2-*`
+- Phase 4: all three repos (shell composition only)
+- Phase 5: unified repo only (validation and convergence)
+
+## Phase 1 Starting File Set (Concrete)
+- `requirement-co-builder/src/state/schema.ts`
+- `requirement-co-builder/src/state/index.ts`
+- `requirement-co-builder/src/state/atomic.ts`
+- `requirement-co-builder/src/projects/index.ts`
+- `requirement-co-builder/src/projects/snapshot.ts`
+- `requirement-co-builder/src/projects/research.ts`
+- `requirement-co-builder/src/output/compile.ts`
+- `requirement-co-builder/src/output/artifacts.ts`
+- `requirement-co-builder/src/adapters/llm.ts` (contract extraction only)
+

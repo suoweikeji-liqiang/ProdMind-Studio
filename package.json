@@ -1,0 +1,19 @@
+{
+  "name": "prodmind-studio",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.2.0",
+  "scripts": {
+    "lint": "node scripts/lint.mjs && node scripts/run-workspace-task.mjs lint",
+    "typecheck": "node scripts/run-workspace-task.mjs typecheck",
+    "test": "node scripts/run-workspace-task.mjs test",
+    "build": "node scripts/run-workspace-task.mjs build",
+    "check:docs": "node scripts/check-docs.mjs",
+    "check:boundaries": "node scripts/check-boundaries.mjs",
+    "check:forbidden-deps": "node scripts/check-forbidden-deps.mjs",
+    "check:all": "pnpm run check:docs && pnpm run check:boundaries && pnpm run check:forbidden-deps && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

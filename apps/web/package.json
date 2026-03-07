@@ -1,0 +1,22 @@
+{
+  "name": "@prodmind/app-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "node ../../scripts/lint.mjs --scope src",
+    "typecheck": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json --noEmit",
+    "test": "node ../../scripts/test-package.mjs --scope . --package @prodmind/app-web",
+    "build": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@prodmind/challenge-engine": "workspace:*",
+    "@prodmind/decision-engine": "workspace:*",
+    "@prodmind/asset-engine": "workspace:*",
+    "@prodmind/shared-types": "workspace:*",
+    "@prodmind/llm-adapter": "workspace:*"
+  },
+  "exports": {
+    ".": "./dist/index.js"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "name": "@prodmind/app-cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "node ../../scripts/lint.mjs --scope src",
+    "typecheck": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json --noEmit",
+    "test": "node ../../scripts/test-package.mjs --scope . --package @prodmind/app-cli",
+    "build": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@prodmind/challenge-engine": "workspace:*",
+    "@prodmind/decision-engine": "workspace:*",
+    "@prodmind/asset-engine": "workspace:*",
+    "@prodmind/shared-types": "workspace:*",
+    "@prodmind/llm-adapter": "workspace:*"
+  },
+  "bin": {
+    "prodmind-studio": "./dist/index.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0"
+  }
+}

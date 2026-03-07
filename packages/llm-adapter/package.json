@@ -1,0 +1,15 @@
+{
+  "name": "@prodmind/llm-adapter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "node ../../scripts/lint.mjs --scope src",
+    "typecheck": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json --noEmit",
+    "test": "node ../../scripts/test-package.mjs --scope . --package @prodmind/llm-adapter",
+    "build": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json"
+  },
+  "exports": {
+    ".": "./dist/index.js"
+  }
+}

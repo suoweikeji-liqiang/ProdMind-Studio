@@ -1,0 +1,18 @@
+{
+  "name": "@prodmind/asset-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "node ../../scripts/lint.mjs --scope src",
+    "typecheck": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json --noEmit",
+    "test": "node ../../scripts/test-package.mjs --scope . --package @prodmind/asset-engine",
+    "build": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@prodmind/shared-types": "workspace:*"
+  },
+  "exports": {
+    ".": "./dist/index.js"
+  }
+}
