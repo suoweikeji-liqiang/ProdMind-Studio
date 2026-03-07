@@ -181,22 +181,34 @@ See [phase2_5-challenge-asset-integration.md](./phase2_5-challenge-asset-integra
 - Risk: multilingual regex/prompt assumptions break.
   - Mitigation: include CN/EN test cases for conflict/falsification checks.
 
-## Phase 3: Decision Engine Extraction
+## Phase 3: Decision Engine Extraction ✅ COMPLETED
 
 ### Goal
 - Extract stateful multi-agent decision orchestration into `packages/decision-engine`.
 
-### Source Inputs
-- Primary:
-  - `prodmind-v2/prodmind2-cli/src/{state.ts,scheduler.ts,session.ts,storage.ts,roles/index.ts,export.ts}`
-  - `prodmind-v2/prodmind2-web/src/lib/engine/{debate.ts,scheduler.ts,context-builder.ts,parsers.ts,roles.ts,export.ts}`
-  - `prodmind-v2/prodmind2-web/supabase/migrations/001_initial_schema.sql`
+### Status: COMPLETED (2026-03-07)
 
-### Work Items
-- Canonicalize decision state tree and transitions.
-- Isolate scheduler policy and parser extraction.
-- Abstract snapshot/confidence calculation from storage backend.
-- Add backend-agnostic persistence interface (file/DB adapters are shells).
+### Completed Work
+- ✅ Implemented `packages/decision-engine` kernel:
+  - `session.ts`: decision session state management
+  - `orchestrator.ts`: decision step execution and summary builder
+- ✅ Extended `packages/shared-types`:
+  - `domain/decision.ts`: DecisionSession, DecisionStep, DecisionSummary
+- ✅ Implemented decision-to-asset handoff
+- ✅ Added golden path test for decision orchestration
+
+### Migrated Files
+From `prodmind-v2`:
+- Core decision logic → `packages/decision-engine/src/orchestrator.ts`
+- Session state → `packages/decision-engine/src/session.ts`
+- Types → `packages/shared-types/src/domain/decision.ts`
+
+### Intentionally NOT Migrated
+- Scheduler policy (deferred to Phase 4B+)
+- Context builder (deferred)
+- Parser extraction (deferred)
+- Supabase schema coupling
+- Web UI components
 
 ### Risks
 - Risk: hard coupling to Supabase schema and auth context.
@@ -204,23 +216,51 @@ See [phase2_5-challenge-asset-integration.md](./phase2_5-challenge-asset-integra
 - Risk: parser fragility from prompt format drift.
   - Mitigation: parser tests with variant outputs.
 
-## Phase 4: Shell Composition (CLI + Web)
+## Phase 4A: CLI Composition Layer (IN PROGRESS)
 
 ### Goal
-- Wire `apps/cli` and `apps/web` as thin composition layers over unified engines.
+- Implement thin CLI composition layer to connect challenge → decision → asset into executable main path.
+
+### Status: IN PROGRESS (2026-03-07)
+
+### Scope
+- ✅ Define CLI boundary (composition only, no engine logic)
+- 🔄 Implement minimal command surface (init, challenge, decision, assets, workflow)
+- 🔄 Compose full engine workflow (idea → challenge → decision → assets)
+- 🔄 Add E2E CLI golden path test
+- 🔄 Introduce minimal workflow metadata hooks
+- ❌ NOT implementing Web UI (deferred to Phase 4B)
+- ❌ NOT implementing full planning system (deferred)
+
+### Work Items
+1. Define CLI responsibility boundary
+2. Implement minimal commands: init, challenge, decision, assets, workflow
+3. Compose engines into executable pipeline
+4. Add E2E golden path test
+5. Add minimal workflow metadata contract
+
+### Risks
+- Risk: CLI absorbing engine logic
+  - Mitigation: strict boundary documentation + quality gates
+- Risk: scope creep into Web UI or planning system
+  - Mitigation: explicit deferred items list
+
+### Next Steps
+- Phase 4B: Web UI composition layer
+- Phase 5: Convergence and hardening
+
+## Phase 4B: Web Composition Layer (DEFERRED)
+
+### Goal
+- Wire `apps/web` as thin composition layer over unified engines.
 
 ### Source Inputs
-- CLI shell references:
-  - `prodmind-v1/prodmind-cli/src/index.ts`
-  - `prodmind-v2/prodmind2-cli/src/index.ts`
-  - `requirement-co-builder/src/bin/req.ts`
 - Web shell references:
   - `prodmind-v1/prodmind-web/src/app/**`
   - `prodmind-v2/prodmind2-web/src/app/**` + `src/components/**`
 
 ### Work Items
-- Implement unified command and API composition without duplicating engine logic.
-- Keep old UI behavior parity where required, but no early visual unification.
+- Implement unified API composition without duplicating engine logic.
 - Provide adapter-based transport (SSE/HTTP) that maps engine events to shell channels.
 
 ### Risks
