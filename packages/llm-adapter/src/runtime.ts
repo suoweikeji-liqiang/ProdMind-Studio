@@ -7,7 +7,9 @@ export interface RuntimeProviderConfig {
   mode: 'fake' | 'real';
   type?: 'openai' | 'anthropic';
   apiKey?: string;
+  name?: string;
   modelId?: string;
+  baseURL?: string;
   timeoutMs?: number;
   maxTimeoutMs?: number;
   maxRetries?: number;
@@ -17,7 +19,9 @@ export interface RuntimeProviderConfig {
   fallback?: {
     type: 'openai' | 'anthropic';
     apiKey?: string;
+    name?: string;
     modelId?: string;
+    baseURL?: string;
     timeoutMs?: number;
     maxTimeoutMs?: number;
     maxRetries?: number;
@@ -43,7 +47,9 @@ export function createRuntimeAdapter(
   const adapterConfig: LLMConfig = {
     provider: config.type,
     apiKey: config.apiKey,
+    name: config.name,
     modelId: config.modelId,
+    baseURL: config.baseURL,
     timeoutMs: config.timeoutMs,
     maxTimeoutMs: config.maxTimeoutMs,
     maxRetries: config.maxRetries,
@@ -54,7 +60,9 @@ export function createRuntimeAdapter(
       ? {
           provider: config.fallback.type,
           apiKey: config.fallback.apiKey,
+          name: config.fallback.name,
           modelId: config.fallback.modelId,
+          baseURL: config.fallback.baseURL,
           timeoutMs: config.fallback.timeoutMs,
           maxTimeoutMs: config.fallback.maxTimeoutMs,
           maxRetries: config.fallback.maxRetries,

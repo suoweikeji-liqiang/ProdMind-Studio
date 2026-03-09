@@ -890,7 +890,7 @@ function createRealProviderProfile(config: LLMConfig, fallbackConfigured: boolea
   const fallbackMode = config.fallbackMode ?? (fallbackConfigured ? 'explicit' : 'disabled');
 
   return {
-    providerName: config.provider,
+    providerName: config.name ?? config.provider,
     modelName: config.modelId,
     enabled: true,
     capabilities: {
@@ -904,7 +904,7 @@ function createRealProviderProfile(config: LLMConfig, fallbackConfigured: boolea
       maxRetriesLimit,
       fallbackEligible: fallbackConfigured && fallbackMode === 'explicit',
       fallbackMode,
-      fallbackProvider: config.fallback?.provider,
+      fallbackProvider: config.fallback?.name ?? config.fallback?.provider,
       fallbackModel: config.fallback?.modelId,
     },
     usage: {

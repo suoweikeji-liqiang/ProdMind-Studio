@@ -66,6 +66,7 @@ export interface LLMPricingConfig {
 export interface LLMConfig {
   provider: Exclude<LLMProvider, 'fake'>;
   apiKey: string;
+  name?: string;
   modelId: string;
   baseURL?: string;
   timeoutMs?: number;

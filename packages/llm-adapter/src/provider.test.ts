@@ -1,8 +1,32 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { createFakeProvider } from './fake-provider.js';
+import { createLLMAdapter } from './provider.js';
 
 describe('LLM Adapter Reliability', () => {
+  it('prefers configured display names in metadata without changing fallback model metadata', () => {
+    const adapter = createLLMAdapter({
+      provider: 'openai',
+      apiKey: 'test-key',
+      name: 'qwen',
+      modelId: 'qwen-plus',
+      baseURL: 'https://compat.example/v1',
+      fallback: {
+        provider: 'openai',
+        apiKey: 'fallback-key',
+        name: 'deepseek',
+        modelId: 'deepseek-chat',
+        baseURL: 'https://fallback.example/v1',
+      },
+    });
+
+    const metadata = adapter.getMetadata();
+    expect(metadata.providerName).toBe('qwen');
+    expect(metadata.modelName).toBe('qwen-plus');
+    expect(metadata.reliability.fallbackProvider).toBe('deepseek');
+    expect(metadata.reliability.fallbackModel).toBe('deepseek-chat');
+  });
+
   it('prefers the primary route when it satisfies the required capabilities', async () => {
     const fallback = createFakeProvider(
       { default: { ok: false } },

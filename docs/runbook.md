@@ -68,9 +68,59 @@ node apps/cli/dist/index.js workflow "your idea"
 
 Use only when validating real provider behavior.
 
+Provider config can come from:
+
+1. repo root `.env`
+2. app-local `.env.local`
+3. existing process env
+
+Process env stays highest priority. After changing env files, restart Web or CLI.
+
+Repo root `.env` examples:
+
+```env
+PROVIDER_MODE=real
+PROVIDER_TYPE=openai
+PROVIDER_NAME=qwen
+PROVIDER_API_KEY=your-key
+PROVIDER_BASE_URL=https://your-openai-compatible-endpoint
+MODEL_ID=qwen-plus
+```
+
+```env
+PROVIDER_MODE=real
+PROVIDER_TYPE=openai
+PROVIDER_NAME=deepseek
+PROVIDER_API_KEY=your-key
+PROVIDER_BASE_URL=https://your-openai-compatible-endpoint
+MODEL_ID=deepseek-chat
+```
+
+```env
+PROVIDER_MODE=real
+PROVIDER_TYPE=anthropic
+ANTHROPIC_API_KEY=sk-ant-xxx
+MODEL_ID=claude-3-5-haiku-20241022
+```
+
+Optional app-local override:
+
+`apps/web/.env.local`
+
+```env
+MODEL_ID=qwen-max
+```
+
+`apps/cli/.env.local`
+
+```env
+MODEL_ID=deepseek-reasoner
+```
+
+Direct shell override still works:
+
 ```bash
 PROVIDER_MODE=real OPENAI_API_KEY=sk-xxx MODEL_ID=gpt-4o-mini node apps/cli/dist/index.js workflow "your idea"
-PROVIDER_MODE=real PROVIDER_TYPE=anthropic ANTHROPIC_API_KEY=sk-ant-xxx MODEL_ID=claude-3-5-haiku-20241022 node apps/cli/dist/index.js workflow "your idea"
 ```
 
 Notes:
@@ -78,6 +128,8 @@ Notes:
 - routing and policy remain adapter-owned
 - retry/timeout/fallback remain conservative
 - usage/cost is visibility only, not billing-grade
+- `PROVIDER_TYPE=openai` is the correct setting for Qwen or DeepSeek OpenAI-compatible endpoints
+- `PROVIDER_NAME` is display-only; it does not change routing or reliability policy
 
 ## History And Revisit
 
