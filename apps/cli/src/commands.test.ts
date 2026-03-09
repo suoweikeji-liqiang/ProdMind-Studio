@@ -79,10 +79,10 @@ describe('CLI E2E Golden Path', () => {
     try {
       displayProviderExecutions([{
         operation: 'streamText',
-        initialProvider: 'openai',
-        initialModel: 'gpt-4o-mini',
-        selectedProvider: 'anthropic',
-        selectedModel: 'claude-3-5-haiku-20241022',
+        initialProvider: 'qwen',
+        initialModel: 'qwen-plus',
+        selectedProvider: 'deepseek',
+        selectedModel: 'deepseek-chat',
         attempts: 2,
         retriesPerformed: 1,
         timeoutCount: 1,
@@ -91,15 +91,15 @@ describe('CLI E2E Golden Path', () => {
         routeResolution: {
           strategy: 'explicit-fallback',
           initialCandidate: {
-            providerName: 'openai',
-            modelName: 'gpt-4o-mini',
+            providerName: 'qwen',
+            modelName: 'qwen-plus',
             routeRole: 'primary',
             enabled: true,
             fallbackEligible: true,
           },
           resolvedCandidate: {
-            providerName: 'anthropic',
-            modelName: 'claude-3-5-haiku-20241022',
+            providerName: 'deepseek',
+            modelName: 'deepseek-chat',
             routeRole: 'fallback',
             enabled: true,
             fallbackEligible: false,
@@ -126,6 +126,8 @@ describe('CLI E2E Golden Path', () => {
     expect(lines.join('\n')).toContain('fallback');
     expect(lines.join('\n')).toContain('Policy:');
     expect(lines.join('\n')).toContain('5000ms');
+    expect(lines.join('\n')).toContain('qwen/qwen-plus');
+    expect(lines.join('\n')).toContain('deepseek/deepseek-chat');
     expect(lines.join('\n')).toContain('Failure Stage:');
   });
 

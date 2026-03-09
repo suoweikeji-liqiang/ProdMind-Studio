@@ -128,8 +128,8 @@ describe('Web Happy Path', () => {
     const html = renderProviderSummary([{
       initialProvider: 'openai',
       initialModel: 'gpt-4o-mini',
-      selectedProvider: 'fake',
-      selectedModel: 'fake-default',
+      selectedProvider: 'qwen',
+      selectedModel: 'qwen-plus',
       attempts: 2,
       retriesPerformed: 1,
       timeoutCount: 0,
@@ -138,15 +138,15 @@ describe('Web Happy Path', () => {
       routeResolution: {
         strategy: 'single',
         initialCandidate: {
-          providerName: 'fake',
-          modelName: 'fake-default',
+          providerName: 'qwen',
+          modelName: 'qwen-plus',
           routeRole: 'primary',
           enabled: true,
           fallbackEligible: false,
         },
         resolvedCandidate: {
-          providerName: 'fake',
-          modelName: 'fake-default',
+          providerName: 'qwen',
+          modelName: 'qwen-plus',
           routeRole: 'primary',
           enabled: true,
           fallbackEligible: false,
@@ -164,7 +164,7 @@ describe('Web Happy Path', () => {
         costAvailability: 'unavailable',
       },
     }]);
-    expect(html).toContain('fake/fake-default');
+    expect(html).toContain('qwen/qwen-plus');
     expect(html).toContain('Retries:</strong> 1');
     expect(html).toContain('Route:</strong>');
     expect(html).toContain('Failure Stage:</strong> primary');

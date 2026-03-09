@@ -1,6 +1,9 @@
 import express from 'express';
+import { loadEnvFiles } from './config.js';
 import { workflowRouter } from './routes/workflow.js';
 import { renderHome, renderWorkflow, renderResults, renderHistoryListPage, renderHistoryDetailPage } from './views/index.js';
+
+loadEnvFiles();
 
 const app = express();
 const PORT = process.env.PORT || 3000;

@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 
+import { loadEnvFiles } from './config.js';
 import { initProject, runChallenge, runDecision, exportAssets, runWorkflow, listHistory, showHistory } from './commands.js';
+
+loadEnvFiles();
 
 const args = process.argv.slice(2);
 const command = args[0];

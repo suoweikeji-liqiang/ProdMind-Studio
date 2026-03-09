@@ -64,18 +64,59 @@ node dist/index.js workflow "your idea here"
 
 - Default: fake provider
 - Opt-in: real provider for local validation and smoke
+- Supported config sources for Web/CLI startup:
+  - repo root `.env`
+  - `apps/web/.env.local` or `apps/cli/.env.local`
+  - shell / service-manager env vars override file values
+
+Recommended precedence:
+
+1. repo root `.env`
+2. app-local `.env.local`
+3. existing process env
+
+After changing env files, restart the Web or CLI process.
 
 Examples:
 
-```bash
+Repo root `.env`
+
+```env
 # Default fake-provider path
+PROVIDER_MODE=fake
+```
+
+```env
+# OpenAI-compatible Qwen example
+PROVIDER_MODE=real
+PROVIDER_TYPE=openai
+PROVIDER_NAME=qwen
+PROVIDER_API_KEY=your-key
+PROVIDER_BASE_URL=https://your-openai-compatible-endpoint
+MODEL_ID=qwen-plus
+```
+
+```env
+# OpenAI-compatible DeepSeek example
+PROVIDER_MODE=real
+PROVIDER_TYPE=openai
+PROVIDER_NAME=deepseek
+PROVIDER_API_KEY=your-key
+PROVIDER_BASE_URL=https://your-openai-compatible-endpoint
+MODEL_ID=deepseek-chat
+```
+
+Optional Web-only override in `apps/web/.env.local`
+
+```env
+MODEL_ID=qwen-max
+```
+
+Command examples:
+
+```bash
 node apps/cli/dist/index.js workflow "your idea"
-
-# Real provider path
-PROVIDER_MODE=real OPENAI_API_KEY=sk-xxx MODEL_ID=gpt-4o-mini node apps/cli/dist/index.js workflow "your idea"
-
-# Real-provider smoke
-OPENAI_API_KEY=sk-xxx node scripts/smoke-real-provider.mjs
+node scripts/smoke-real-provider.mjs
 ```
 
 ## Core Commands
