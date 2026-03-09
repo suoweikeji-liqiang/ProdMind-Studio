@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   ProviderCapabilityProfileSchema,
   ProviderExecutionSummarySchema,
+  ProviderRouteCandidateSchema,
+  ProviderRouteResolutionSchema,
   WorkflowResultSchema,
   WorkflowRunSchema,
 } from '../src/index.js';
@@ -17,9 +19,12 @@ describe('Provider Maturity Contracts', () => {
         streaming: true,
       },
       reliability: {
-        timeoutMs: 10000,
-        maxRetries: 1,
+        defaultTimeoutMs: 10000,
+        maxTimeoutMs: 30000,
+        defaultMaxRetries: 1,
+        maxRetriesLimit: 2,
         fallbackEligible: true,
+        fallbackMode: 'explicit',
       },
       usage: {
         tokenAccounting: 'provider',
@@ -29,7 +34,36 @@ describe('Provider Maturity Contracts', () => {
 
     expect(profile.enabled).toBe(false);
     expect(profile.capabilities.streaming).toBe(true);
-    expect(profile.reliability.timeoutMs).toBe(10000);
+    expect(profile.reliability.defaultTimeoutMs).toBe(10000);
+    expect(profile.reliability.maxRetriesLimit).toBe(2);
+  });
+
+  it('validates route candidates and deterministic route resolution', () => {
+    const primary = ProviderRouteCandidateSchema.parse({
+      providerName: 'openai',
+      modelName: 'gpt-4o-mini',
+      routeRole: 'primary',
+      enabled: true,
+      fallbackEligible: true,
+    });
+
+    const resolution = ProviderRouteResolutionSchema.parse({
+      strategy: 'explicit-fallback',
+      requestedCapabilities: {
+        structuredOutput: true,
+      },
+      initialCandidate: primary,
+      resolvedCandidate: {
+        providerName: 'anthropic',
+        modelName: 'claude-3-5-haiku-20241022',
+        routeRole: 'fallback',
+        enabled: true,
+        fallbackEligible: false,
+      },
+    });
+
+    expect(resolution.initialCandidate.routeRole).toBe('primary');
+    expect(resolution.resolvedCandidate?.routeRole).toBe('fallback');
   });
 
   it('validates provider execution summary with runtime-derived fields', () => {
@@ -40,6 +74,29 @@ describe('Provider Maturity Contracts', () => {
       retriesPerformed: 1,
       timeoutCount: 0,
       fallbackUsed: false,
+      failureStage: 'selection',
+      routeResolution: {
+        strategy: 'single',
+        initialCandidate: {
+          providerName: 'openai',
+          modelName: 'gpt-4o-mini',
+          routeRole: 'primary',
+          enabled: true,
+          fallbackEligible: false,
+        },
+        resolvedCandidate: {
+          providerName: 'openai',
+          modelName: 'gpt-4o-mini',
+          routeRole: 'primary',
+          enabled: true,
+          fallbackEligible: false,
+        },
+      },
+      policySnapshot: {
+        timeoutMs: 10000,
+        maxRetries: 1,
+        fallbackMode: 'disabled',
+      },
       usage: {
         requestCount: 1,
         tokenAvailability: 'estimated',
@@ -53,6 +110,7 @@ describe('Provider Maturity Contracts', () => {
 
     expect(summary.retriesPerformed).toBe(1);
     expect(summary.usage.totalTokens).toBe(175);
+    expect(summary.policySnapshot?.timeoutMs).toBe(10000);
   });
 
   it('allows workflow run persistence of provider execution summaries', () => {

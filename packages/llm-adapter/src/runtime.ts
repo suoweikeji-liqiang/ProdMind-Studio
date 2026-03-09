@@ -1,6 +1,7 @@
 import type { LLMAdapter, LLMConfig, LLMPricingConfig } from './types.js';
 import { createFakeProvider, type FakeProviderOptions } from './fake-provider.js';
 import { createLLMAdapter } from './provider.js';
+import type { ProviderFallbackMode } from '@prodmind/shared-types';
 
 export interface RuntimeProviderConfig {
   mode: 'fake' | 'real';
@@ -8,14 +9,20 @@ export interface RuntimeProviderConfig {
   apiKey?: string;
   modelId?: string;
   timeoutMs?: number;
+  maxTimeoutMs?: number;
   maxRetries?: number;
+  maxRetriesLimit?: number;
+  fallbackMode?: ProviderFallbackMode;
   pricing?: LLMPricingConfig;
   fallback?: {
     type: 'openai' | 'anthropic';
     apiKey?: string;
     modelId?: string;
     timeoutMs?: number;
+    maxTimeoutMs?: number;
     maxRetries?: number;
+    maxRetriesLimit?: number;
+    fallbackMode?: ProviderFallbackMode;
     pricing?: LLMPricingConfig;
   };
 }
@@ -38,7 +45,10 @@ export function createRuntimeAdapter(
     apiKey: config.apiKey,
     modelId: config.modelId,
     timeoutMs: config.timeoutMs,
+    maxTimeoutMs: config.maxTimeoutMs,
     maxRetries: config.maxRetries,
+    maxRetriesLimit: config.maxRetriesLimit,
+    fallbackMode: config.fallbackMode,
     pricing: config.pricing,
     fallback: config.fallback && config.fallback.apiKey && config.fallback.modelId
       ? {
@@ -46,7 +56,10 @@ export function createRuntimeAdapter(
           apiKey: config.fallback.apiKey,
           modelId: config.fallback.modelId,
           timeoutMs: config.fallback.timeoutMs,
+          maxTimeoutMs: config.fallback.maxTimeoutMs,
           maxRetries: config.fallback.maxRetries,
+          maxRetriesLimit: config.fallback.maxRetriesLimit,
+          fallbackMode: config.fallback.fallbackMode,
           pricing: config.fallback.pricing,
         }
       : undefined,

@@ -38,11 +38,36 @@ describe('Web Happy Path', () => {
   it('should render provider summary block', async () => {
     const { renderProviderSummary } = await import('../src/views/result-renderer.js');
     const html = renderProviderSummary([{
+      initialProvider: 'openai',
+      initialModel: 'gpt-4o-mini',
       selectedProvider: 'fake',
       selectedModel: 'fake-default',
       retriesPerformed: 1,
       timeoutCount: 0,
       fallbackUsed: false,
+      failureStage: 'primary',
+      routeResolution: {
+        strategy: 'single',
+        initialCandidate: {
+          providerName: 'fake',
+          modelName: 'fake-default',
+          routeRole: 'primary',
+          enabled: true,
+          fallbackEligible: false,
+        },
+        resolvedCandidate: {
+          providerName: 'fake',
+          modelName: 'fake-default',
+          routeRole: 'primary',
+          enabled: true,
+          fallbackEligible: false,
+        },
+      },
+      policySnapshot: {
+        timeoutMs: 5000,
+        maxRetries: 1,
+        fallbackMode: 'disabled',
+      },
       usage: {
         totalTokens: 42,
         tokenAvailability: 'estimated',
@@ -51,5 +76,8 @@ describe('Web Happy Path', () => {
     }]);
     expect(html).toContain('fake/fake-default');
     expect(html).toContain('Retries:</strong> 1');
+    expect(html).toContain('Route:</strong>');
+    expect(html).toContain('Failure Stage:</strong> primary');
+    expect(html).toContain('Policy:</strong> timeout=5000ms');
   });
 });

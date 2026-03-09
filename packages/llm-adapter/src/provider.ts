@@ -7,6 +7,10 @@ import type {
   CorrelationContext,
   ProviderCapabilityProfile,
   ProviderExecutionSummary,
+  ProviderFallbackMode,
+  ProviderPolicySnapshot,
+  ProviderRouteCandidate,
+  ProviderRouteResolution,
   ProviderSelectionRequirement,
   ProviderUsageSummary,
 } from '@prodmind/shared-types';
@@ -65,6 +69,20 @@ type AttemptFailure = {
   timeoutCount: number;
   backend: ProviderBackend;
 };
+
+type RouteSelection =
+  | {
+      ok: true;
+      selectedBackend: ProviderBackend;
+      fallbackBackend?: ProviderBackend;
+      fallbackUsed: boolean;
+      routeResolution: ProviderRouteResolution;
+    }
+  | {
+      ok: false;
+      error: ProviderError;
+      routeResolution: ProviderRouteResolution;
+    };
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_MAX_RETRIES = 1;
@@ -261,20 +279,6 @@ function buildRetryExhaustedError(lastError: ProviderError, attempts: number): P
   };
 }
 
-function shouldUseFallback(error: ProviderError | null, fallback?: ProviderBackend): boolean {
-  if (!fallback || !error) {
-    return false;
-  }
-
-  return [
-    'capability_mismatch',
-    'retry_exhausted',
-    'timeout',
-    'network',
-    'rate_limit',
-  ].includes(error.type);
-}
-
 function toError(normalized: ProviderError, execution: ProviderExecutionSummary): LLMProviderError {
   return new LLMProviderError(normalized, execution);
 }
@@ -314,34 +318,215 @@ function extractUsageFromUnknown(candidate: unknown): RawUsage | undefined {
   };
 }
 
+function sanitizePositiveInt(value: number | undefined): number | undefined {
+  if (!Number.isFinite(value)) {
+    return undefined;
+  }
+
+  const normalized = Math.floor(value as number);
+  return normalized > 0 ? normalized : undefined;
+}
+
+function sanitizeNonNegativeInt(value: number | undefined): number | undefined {
+  if (!Number.isFinite(value)) {
+    return undefined;
+  }
+
+  const normalized = Math.floor(value as number);
+  return normalized >= 0 ? normalized : undefined;
+}
+
+function clamp(value: number, minimum: number, maximum: number): number {
+  return Math.min(Math.max(value, minimum), maximum);
+}
+
+function resolveReliabilityBounds(profile: ProviderCapabilityProfile['reliability']): {
+  defaultTimeoutMs: number;
+  maxTimeoutMs: number;
+  defaultMaxRetries: number;
+  maxRetriesLimit: number;
+  fallbackMode: ProviderFallbackMode;
+} {
+  const defaultTimeoutMs = profile.defaultTimeoutMs ?? profile.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const maxTimeoutMs = profile.maxTimeoutMs ?? defaultTimeoutMs;
+  const defaultMaxRetries = profile.defaultMaxRetries ?? profile.maxRetries ?? DEFAULT_MAX_RETRIES;
+  const maxRetriesLimit = profile.maxRetriesLimit ?? defaultMaxRetries;
+  const fallbackMode = profile.fallbackMode ?? (profile.fallbackEligible ? 'explicit' : 'disabled');
+
+  return {
+    defaultTimeoutMs,
+    maxTimeoutMs,
+    defaultMaxRetries,
+    maxRetriesLimit,
+    fallbackMode,
+  };
+}
+
+function isExplicitFallbackMode(mode: ProviderFallbackMode): boolean {
+  return mode === 'explicit';
+}
+
+function canUseFallback(backend: ProviderBackend | undefined): boolean {
+  if (!backend) {
+    return false;
+  }
+
+  const bounds = resolveReliabilityBounds(backend.profile.reliability);
+
+  return backend.profile.reliability.fallbackEligible
+    && isExplicitFallbackMode(bounds.fallbackMode);
+}
+
+function buildRouteCandidate(
+  backend: ProviderBackend,
+  routeRole: ProviderRouteCandidate['routeRole']
+): ProviderRouteCandidate {
+  return {
+    providerName: backend.profile.providerName,
+    modelName: backend.profile.modelName,
+    routeRole,
+    enabled: backend.profile.enabled,
+    fallbackEligible: backend.profile.reliability.fallbackEligible,
+  };
+}
+
+function buildPolicySnapshot(
+  backend: ProviderBackend,
+  options: LLMRequestOptions | undefined
+): ProviderPolicySnapshot {
+  const requestedTimeoutMs = sanitizePositiveInt(options?.timeoutMs);
+  const requestedMaxRetries = sanitizeNonNegativeInt(options?.maxRetries);
+  const reliability = resolveReliabilityBounds(backend.profile.reliability);
+
+  return {
+    timeoutMs: clamp(
+      requestedTimeoutMs ?? reliability.defaultTimeoutMs,
+      1,
+      reliability.maxTimeoutMs
+    ),
+    maxRetries: clamp(
+      requestedMaxRetries ?? reliability.defaultMaxRetries,
+      0,
+      reliability.maxRetriesLimit
+    ),
+    fallbackMode: reliability.fallbackMode,
+  };
+}
+
+function buildRouteResolutionBase(
+  primary: ProviderBackend,
+  fallback: ProviderBackend | undefined,
+  requiredCapabilities: ProviderSelectionRequirement | undefined
+): ProviderRouteResolution {
+  return {
+    strategy: fallback ? 'explicit-fallback' : 'single',
+    requestedCapabilities: requiredCapabilities,
+    initialCandidate: buildRouteCandidate(primary, 'primary'),
+    fallbackCandidate: fallback ? buildRouteCandidate(fallback, 'fallback') : undefined,
+  };
+}
+
+function withResolvedCandidate(
+  resolution: ProviderRouteResolution,
+  backend: ProviderBackend,
+  routeRole: ProviderRouteCandidate['routeRole']
+): ProviderRouteResolution {
+  return {
+    ...resolution,
+    resolvedCandidate: buildRouteCandidate(backend, routeRole),
+    rejection: undefined,
+  };
+}
+
+function withRouteRejection(
+  resolution: ProviderRouteResolution,
+  error: ProviderError,
+  stage: 'selection' | 'primary' | 'fallback'
+): ProviderRouteResolution {
+  return {
+    ...resolution,
+    rejection: {
+      stage,
+      reason: error.message,
+      failureType: error.type,
+    },
+  };
+}
+
+function resolveInitialRoute(
+  primary: ProviderBackend,
+  fallback: ProviderBackend | undefined,
+  requiredCapabilities: ProviderSelectionRequirement | undefined
+): RouteSelection {
+  const resolution = buildRouteResolutionBase(primary, fallback, requiredCapabilities);
+  const primaryMismatch = resolveCapabilityMismatch(primary.profile, requiredCapabilities);
+
+  if (!primaryMismatch) {
+    return {
+      ok: true,
+      selectedBackend: primary,
+      fallbackBackend: fallback,
+      fallbackUsed: false,
+      routeResolution: withResolvedCandidate(resolution, primary, 'primary'),
+    };
+  }
+
+  if (fallback && canUseFallback(primary)) {
+    const fallbackMismatch = resolveCapabilityMismatch(fallback.profile, requiredCapabilities);
+    if (!fallbackMismatch) {
+      return {
+        ok: true,
+        selectedBackend: fallback,
+        fallbackBackend: undefined,
+        fallbackUsed: true,
+        routeResolution: withResolvedCandidate(resolution, fallback, 'fallback'),
+      };
+    }
+  }
+
+  return {
+    ok: false,
+    error: primaryMismatch,
+    routeResolution: withRouteRejection(resolution, primaryMismatch, 'selection'),
+  };
+}
+
+function shouldAttemptFallback(
+  primaryBackend: ProviderBackend,
+  fallbackBackend: ProviderBackend | undefined,
+  error: ProviderError,
+  requiredCapabilities: ProviderSelectionRequirement | undefined
+): boolean {
+  if (!fallbackBackend || !canUseFallback(primaryBackend)) {
+    return false;
+  }
+
+  if (resolveCapabilityMismatch(fallbackBackend.profile, requiredCapabilities)) {
+    return false;
+  }
+
+  return [
+    'capability_mismatch',
+    'retry_exhausted',
+    'timeout',
+    'network',
+    'rate_limit',
+  ].includes(error.type);
+}
+
 async function executeAttempt<T>(
   backend: ProviderBackend,
   operation: 'streamText' | 'generateStructured',
   correlation: CorrelationContext | undefined,
-  options: LLMRequestOptions | undefined,
+  policy: ProviderPolicySnapshot,
   executor: () => Promise<{ value: T; usage?: RawUsage }>
 ): Promise<AttemptSuccess<T> | AttemptFailure> {
-  const mismatch = resolveCapabilityMismatch(backend.profile, options?.requiredCapabilities);
-  if (mismatch) {
-    return {
-      ok: false,
-      error: mismatch,
-      attempts: 0,
-      retriesPerformed: 0,
-      timeoutCount: 0,
-      backend,
-    };
-  }
-
-  const timeoutMs = options?.timeoutMs ?? backend.profile.reliability.timeoutMs;
-  const maxRetries = options?.maxRetries ?? backend.profile.reliability.maxRetries;
-
   let attempts = 0;
   let retriesPerformed = 0;
   let timeoutCount = 0;
   let lastError: ProviderError | null = null;
 
-  while (attempts < maxRetries + 1) {
+  while (attempts < policy.maxRetries + 1) {
     const startedAt = Date.now();
     attempts += 1;
 
@@ -350,7 +535,7 @@ async function executeAttempt<T>(
     }
 
     try {
-      const result = await withTimeout(executor(), timeoutMs);
+      const result = await withTimeout(executor(), policy.timeoutMs);
       const usage = mergeUsage(result.usage, backend.profile, attempts);
 
       if (correlation) {
@@ -393,7 +578,7 @@ async function executeAttempt<T>(
         );
       }
 
-      if (normalized.retryable && retriesPerformed < maxRetries) {
+      if (normalized.retryable && retriesPerformed < policy.maxRetries) {
         retriesPerformed += 1;
         continue;
       }
@@ -430,8 +615,11 @@ function buildExecutionSummary(params: {
   timeoutCount: number;
   fallbackUsed: boolean;
   failure?: ProviderError;
+  failureStage?: 'selection' | 'primary' | 'fallback';
   usage: ProviderUsageSummary;
   requiredCapabilities?: ProviderSelectionRequirement;
+  routeResolution?: ProviderRouteResolution;
+  policySnapshot?: ProviderPolicySnapshot;
 }): ProviderExecutionSummary {
   return {
     operation: params.operation,
@@ -447,8 +635,19 @@ function buildExecutionSummary(params: {
     fallbackModel: params.fallbackUsed ? params.finalBackend.profile.modelName : undefined,
     failureType: params.failure?.type,
     failureMessage: params.failure?.message,
+    failureStage: params.failureStage,
     requiredCapabilities: params.requiredCapabilities,
+    routeResolution: params.routeResolution,
+    policySnapshot: params.policySnapshot,
     usage: params.usage,
+  };
+}
+
+function createUnavailableUsage(requestCount: number): ProviderUsageSummary {
+  return {
+    requestCount,
+    tokenAvailability: 'unavailable',
+    costAvailability: 'unavailable',
   };
 }
 
@@ -465,41 +664,116 @@ export function createAdapterFromBackends(
     primaryExecutor: () => Promise<{ value: T; usage?: RawUsage }>,
     fallbackExecutor: (() => Promise<{ value: T; usage?: RawUsage }>) | undefined
   ): Promise<T> {
-    const primaryResult = await executeAttempt(primary, operation, correlation, options, primaryExecutor);
-
-    if (primaryResult.ok) {
+    const routeSelection = resolveInitialRoute(primary, fallback, options?.requiredCapabilities);
+    if (!routeSelection.ok) {
       const summary = buildExecutionSummary({
         operation,
         initial: primary.profile,
         finalBackend: primary,
-        attempts: primaryResult.attempts,
-        retriesPerformed: primaryResult.retriesPerformed,
-        timeoutCount: primaryResult.timeoutCount,
+        attempts: 0,
+        retriesPerformed: 0,
+        timeoutCount: 0,
         fallbackUsed: false,
-        usage: primaryResult.usage,
+        failure: routeSelection.error,
+        failureStage: 'selection',
+        usage: createUnavailableUsage(0),
         requiredCapabilities: options?.requiredCapabilities,
+        routeResolution: routeSelection.routeResolution,
+        policySnapshot: buildPolicySnapshot(primary, options),
       });
       executionLog.push(summary);
-      return primaryResult.value;
+      throw toError(routeSelection.error, summary);
     }
 
-    if (shouldUseFallback(primaryResult.error, fallback) && fallback && fallbackExecutor) {
-      const fallbackResult = await executeAttempt(fallback, operation, correlation, options, fallbackExecutor);
+    const selectedBackend = routeSelection.selectedBackend;
+    const selectedExecutor = selectedBackend === primary ? primaryExecutor : fallbackExecutor;
+    if (!selectedExecutor) {
+      const configurationError: ProviderError = {
+        type: 'fallback_not_configured',
+        message: 'Fallback backend executor is not available',
+        retryable: false,
+      };
+      const summary = buildExecutionSummary({
+        operation,
+        initial: primary.profile,
+        finalBackend: primary,
+        attempts: 0,
+        retriesPerformed: 0,
+        timeoutCount: 0,
+        fallbackUsed: false,
+        failure: configurationError,
+        failureStage: 'selection',
+        usage: createUnavailableUsage(0),
+        requiredCapabilities: options?.requiredCapabilities,
+        routeResolution: withRouteRejection(routeSelection.routeResolution, configurationError, 'selection'),
+        policySnapshot: buildPolicySnapshot(primary, options),
+      });
+      executionLog.push(summary);
+      throw toError(configurationError, summary);
+    }
+
+    const selectedPolicy = buildPolicySnapshot(selectedBackend, options);
+    const selectedResult = await executeAttempt(
+      selectedBackend,
+      operation,
+      correlation,
+      selectedPolicy,
+      selectedExecutor
+    );
+
+    if (selectedResult.ok) {
+      const summary = buildExecutionSummary({
+        operation,
+        initial: primary.profile,
+        finalBackend: selectedBackend,
+        attempts: selectedResult.attempts,
+        retriesPerformed: selectedResult.retriesPerformed,
+        timeoutCount: selectedResult.timeoutCount,
+        fallbackUsed: routeSelection.fallbackUsed,
+        usage: selectedResult.usage,
+        requiredCapabilities: options?.requiredCapabilities,
+        routeResolution: routeSelection.routeResolution,
+        policySnapshot: selectedPolicy,
+      });
+      executionLog.push(summary);
+      return selectedResult.value;
+    }
+
+    const canFallbackAfterPrimary = selectedBackend === primary
+      && shouldAttemptFallback(primary, routeSelection.fallbackBackend, selectedResult.error, options?.requiredCapabilities)
+      && fallbackExecutor;
+
+    if (canFallbackAfterPrimary && routeSelection.fallbackBackend) {
+      const fallbackPolicy = buildPolicySnapshot(routeSelection.fallbackBackend, options);
+      const fallbackResult = await executeAttempt(
+        routeSelection.fallbackBackend,
+        operation,
+        correlation,
+        fallbackPolicy,
+        fallbackExecutor
+      );
+      const fallbackResolution = withResolvedCandidate(
+        routeSelection.routeResolution,
+        routeSelection.fallbackBackend,
+        'fallback'
+      );
 
       if (fallbackResult.ok) {
         const summary = buildExecutionSummary({
           operation,
           initial: primary.profile,
-          finalBackend: fallback,
-          attempts: primaryResult.attempts + fallbackResult.attempts,
-          retriesPerformed: primaryResult.retriesPerformed + fallbackResult.retriesPerformed,
-          timeoutCount: primaryResult.timeoutCount + fallbackResult.timeoutCount,
+          finalBackend: routeSelection.fallbackBackend,
+          attempts: selectedResult.attempts + fallbackResult.attempts,
+          retriesPerformed: selectedResult.retriesPerformed + fallbackResult.retriesPerformed,
+          timeoutCount: selectedResult.timeoutCount + fallbackResult.timeoutCount,
           fallbackUsed: true,
           usage: {
             ...fallbackResult.usage,
-            requestCount: primaryResult.attempts + fallbackResult.usage.requestCount,
+            requestCount: selectedResult.attempts + fallbackResult.usage.requestCount,
           },
           requiredCapabilities: options?.requiredCapabilities,
+          routeResolution: fallbackResolution,
+          policySnapshot: fallbackPolicy,
         });
         executionLog.push(summary);
         return fallbackResult.value;
@@ -507,7 +781,7 @@ export function createAdapterFromBackends(
 
       const failure: ProviderError = {
         type: 'fallback_failed',
-        message: `Fallback provider failed after primary ${primaryResult.error.type}: ${fallbackResult.error.message}`,
+        message: `Fallback provider failed after primary ${selectedResult.error.type}: ${fallbackResult.error.message}`,
         retryable: false,
         originalError: fallbackResult.error.originalError,
       };
@@ -515,41 +789,40 @@ export function createAdapterFromBackends(
       const summary = buildExecutionSummary({
         operation,
         initial: primary.profile,
-        finalBackend: fallback,
-        attempts: primaryResult.attempts + fallbackResult.attempts,
-        retriesPerformed: primaryResult.retriesPerformed + fallbackResult.retriesPerformed,
-        timeoutCount: primaryResult.timeoutCount + fallbackResult.timeoutCount,
+        finalBackend: routeSelection.fallbackBackend,
+        attempts: selectedResult.attempts + fallbackResult.attempts,
+        retriesPerformed: selectedResult.retriesPerformed + fallbackResult.retriesPerformed,
+        timeoutCount: selectedResult.timeoutCount + fallbackResult.timeoutCount,
         fallbackUsed: true,
         failure,
-        usage: {
-          requestCount: primaryResult.attempts + fallbackResult.attempts,
-          tokenAvailability: 'unavailable',
-          costAvailability: 'unavailable',
-        },
+        failureStage: 'fallback',
+        usage: createUnavailableUsage(selectedResult.attempts + fallbackResult.attempts),
         requiredCapabilities: options?.requiredCapabilities,
+        routeResolution: withRouteRejection(fallbackResolution, failure, 'fallback'),
+        policySnapshot: fallbackPolicy,
       });
       executionLog.push(summary);
       throw toError(failure, summary);
     }
 
+    const failureStage = routeSelection.fallbackUsed ? 'fallback' : 'primary';
     const summary = buildExecutionSummary({
       operation,
       initial: primary.profile,
-      finalBackend: primary,
-      attempts: Math.max(primaryResult.attempts, 1),
-      retriesPerformed: primaryResult.retriesPerformed,
-      timeoutCount: primaryResult.timeoutCount,
-      fallbackUsed: false,
-      failure: primaryResult.error,
-      usage: {
-        requestCount: Math.max(primaryResult.attempts, 1),
-        tokenAvailability: 'unavailable',
-        costAvailability: 'unavailable',
-      },
+      finalBackend: selectedBackend,
+      attempts: selectedResult.attempts,
+      retriesPerformed: selectedResult.retriesPerformed,
+      timeoutCount: selectedResult.timeoutCount,
+      fallbackUsed: routeSelection.fallbackUsed,
+      failure: selectedResult.error,
+      failureStage,
+      usage: createUnavailableUsage(selectedResult.attempts),
       requiredCapabilities: options?.requiredCapabilities,
+      routeResolution: withRouteRejection(routeSelection.routeResolution, selectedResult.error, failureStage),
+      policySnapshot: selectedPolicy,
     });
     executionLog.push(summary);
-    throw toError(primaryResult.error, summary);
+    throw toError(selectedResult.error, summary);
   }
 
   return {
@@ -610,6 +883,12 @@ export function createAdapterFromBackends(
 }
 
 function createRealProviderProfile(config: LLMConfig, fallbackConfigured: boolean): ProviderCapabilityProfile {
+  const defaultTimeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const maxTimeoutMs = config.maxTimeoutMs ?? defaultTimeoutMs;
+  const defaultMaxRetries = config.maxRetries ?? DEFAULT_MAX_RETRIES;
+  const maxRetriesLimit = config.maxRetriesLimit ?? defaultMaxRetries;
+  const fallbackMode = config.fallbackMode ?? (fallbackConfigured ? 'explicit' : 'disabled');
+
   return {
     providerName: config.provider,
     modelName: config.modelId,
@@ -619,9 +898,12 @@ function createRealProviderProfile(config: LLMConfig, fallbackConfigured: boolea
       streaming: true,
     },
     reliability: {
-      timeoutMs: config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-      maxRetries: config.maxRetries ?? DEFAULT_MAX_RETRIES,
-      fallbackEligible: fallbackConfigured,
+      defaultTimeoutMs,
+      maxTimeoutMs,
+      defaultMaxRetries,
+      maxRetriesLimit,
+      fallbackEligible: fallbackConfigured && fallbackMode === 'explicit',
+      fallbackMode,
       fallbackProvider: config.fallback?.provider,
       fallbackModel: config.fallback?.modelId,
     },

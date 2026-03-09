@@ -83,8 +83,17 @@ export function renderProviderSummary(executions: any[] | undefined): string {
     <div class="result-section">
       <h3>${execution.operation || 'provider_call'}</h3>
       <p><strong>Provider:</strong> ${execution.selectedProvider}/${execution.selectedModel}</p>
+      <p><strong>Route:</strong> ${execution.routeResolution?.resolvedCandidate?.routeRole
+        ? execution.routeResolution.initialCandidate.routeRole === execution.routeResolution.resolvedCandidate.routeRole
+          ? execution.routeResolution.resolvedCandidate.routeRole
+          : `${execution.routeResolution.initialCandidate.routeRole} -> ${execution.routeResolution.resolvedCandidate.routeRole}`
+        : (execution.fallbackUsed ? 'primary -> fallback' : 'primary')}</p>
+      <p><strong>Policy:</strong> ${execution.policySnapshot
+        ? `timeout=${execution.policySnapshot.timeoutMs}ms | maxRetries=${execution.policySnapshot.maxRetries} | fallbackMode=${execution.policySnapshot.fallbackMode}`
+        : 'unavailable'}</p>
       <p><strong>Retries:</strong> ${execution.retriesPerformed} | <strong>Timeouts:</strong> ${execution.timeoutCount}</p>
       <p><strong>Fallback:</strong> ${execution.fallbackUsed ? 'Yes' : 'No'}</p>
+      <p><strong>Failure Stage:</strong> ${execution.failureStage || 'none'}</p>
       <p><strong>Usage:</strong> ${execution.usage?.totalTokens ?? 'unavailable'} tokens (${execution.usage?.tokenAvailability ?? 'unavailable'})</p>
       <p><strong>Cost:</strong> ${execution.usage?.actualCostUsd ?? execution.usage?.estimatedCostUsd ?? 'unavailable'} (${execution.usage?.costAvailability ?? 'unavailable'})</p>
     </div>

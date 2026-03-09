@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createHistoryStore } from './history-store.js';
+import { probeSqliteEnvironment } from './sqlite-validation.js';
 import type { WorkflowRun, WorkflowResult } from '@prodmind/shared-types';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -155,5 +156,16 @@ describe('HistoryStore', () => {
   it('returns empty array when no runs exist', async () => {
     const runs = await store.listRuns(testDir);
     expect(runs).toEqual([]);
+  });
+
+  it('reports sqlite environment availability with a clear skip reason when unavailable', () => {
+    const probe = probeSqliteEnvironment(path.join(testDir, 'probe.db'));
+
+    expect(typeof probe.available).toBe('boolean');
+    if (probe.available) {
+      expect(probe.reason).toBeUndefined();
+    } else {
+      expect(probe.reason).toBeTruthy();
+    }
   });
 });
