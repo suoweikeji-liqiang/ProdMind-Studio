@@ -73,3 +73,20 @@ export function renderAssetResult(assets: any): string {
     </div>
   `;
 }
+
+export function renderProviderSummary(executions: any[] | undefined): string {
+  if (!executions?.length) {
+    return '<p>No provider summary available</p>';
+  }
+
+  return executions.map((execution) => `
+    <div class="result-section">
+      <h3>${execution.operation || 'provider_call'}</h3>
+      <p><strong>Provider:</strong> ${execution.selectedProvider}/${execution.selectedModel}</p>
+      <p><strong>Retries:</strong> ${execution.retriesPerformed} | <strong>Timeouts:</strong> ${execution.timeoutCount}</p>
+      <p><strong>Fallback:</strong> ${execution.fallbackUsed ? 'Yes' : 'No'}</p>
+      <p><strong>Usage:</strong> ${execution.usage?.totalTokens ?? 'unavailable'} tokens (${execution.usage?.tokenAvailability ?? 'unavailable'})</p>
+      <p><strong>Cost:</strong> ${execution.usage?.actualCostUsd ?? execution.usage?.estimatedCostUsd ?? 'unavailable'} (${execution.usage?.costAvailability ?? 'unavailable'})</p>
+    </div>
+  `).join('');
+}

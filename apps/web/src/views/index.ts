@@ -134,6 +134,10 @@ export const renderResults = (id: string) => layout('Results', `
     <h2>Assets</h2>
     <div class="card" id="assets">Loading...</div>
   </div>
+  <div class="section">
+    <h2>Provider Reliability</h2>
+    <div class="card" id="provider">Loading...</div>
+  </div>
   <script>
     function renderChallenge(c) {
       if (!c) return '<p>No challenge data</p>';
@@ -168,6 +172,20 @@ export const renderResults = (id: string) => layout('Results', `
         '<div class="result-section"><h3>Generated Assets</h3><p>Assets written to project directory</p></div>';
     }
 
+    function renderProviderSummary(executions) {
+      if (!executions?.length) return '<p>No provider summary available</p>';
+      return executions.map(e =>
+        '<div class="result-section">' +
+          '<h3>' + (e.operation || 'provider_call') + '</h3>' +
+          '<p><strong>Provider:</strong> ' + e.selectedProvider + '/' + e.selectedModel + '</p>' +
+          '<p><strong>Retries:</strong> ' + e.retriesPerformed + ' | <strong>Timeouts:</strong> ' + e.timeoutCount + '</p>' +
+          '<p><strong>Fallback:</strong> ' + (e.fallbackUsed ? 'Yes' : 'No') + '</p>' +
+          '<p><strong>Usage:</strong> ' + (e.usage?.totalTokens ?? 'unavailable') + ' tokens (' + (e.usage?.tokenAvailability ?? 'unavailable') + ')</p>' +
+          '<p><strong>Cost:</strong> ' + (e.usage?.actualCostUsd ?? e.usage?.estimatedCostUsd ?? 'unavailable') + ' (' + (e.usage?.costAvailability ?? 'unavailable') + ')</p>' +
+        '</div>'
+      ).join('');
+    }
+
     fetch('/api/workflow/status/${id}')
       .then(r => r.json())
       .then(data => {
@@ -175,10 +193,12 @@ export const renderResults = (id: string) => layout('Results', `
           document.getElementById('challenge').innerHTML = renderChallenge(data.result.challenge);
           document.getElementById('decision').innerHTML = renderDecision(data.result.decision);
           document.getElementById('assets').innerHTML = renderAssets(data.result.assets);
+          document.getElementById('provider').innerHTML = renderProviderSummary(data.result.providerExecutions);
         } else {
           document.getElementById('challenge').textContent = 'No results available';
           document.getElementById('decision').textContent = 'No results available';
           document.getElementById('assets').textContent = 'No results available';
+          document.getElementById('provider').textContent = 'No results available';
         }
       });
   </script>

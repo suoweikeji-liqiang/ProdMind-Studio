@@ -1,14 +1,52 @@
-import type { ObservabilityEvent, SystemMetrics } from '@prodmind/shared-types';
+import type { ProviderExecutionSummary } from '@prodmind/shared-types';
 import { getGlobalEmitter, getGlobalMetricsCollector, SimpleMetricsCollector } from '@prodmind/shared-types';
 
+let observabilitySubscribed = false;
+
 export function setupObservability(): void {
+  if (observabilitySubscribed) {
+    return;
+  }
+
   const emitter = getGlobalEmitter();
   const collector = getGlobalMetricsCollector() as SimpleMetricsCollector;
 
   emitter.subscribe(event => collector.handleEvent(event));
+  observabilitySubscribed = true;
 }
 
-export function displayWorkflowSummary(runId: string, success: boolean, durationMs: number): void {
+function formatUsd(value: number | undefined): string {
+  if (typeof value !== 'number') {
+    return 'unavailable';
+  }
+
+  return `$${value.toFixed(6)}`;
+}
+
+export function displayProviderExecutions(executions: ProviderExecutionSummary[]): void {
+  if (executions.length === 0) {
+    return;
+  }
+
+  console.log('\nProvider Reliability Summary:');
+  for (const execution of executions) {
+    console.log(`- ${execution.operation ?? 'provider_call'}: ${execution.selectedProvider}/${execution.selectedModel}`);
+    console.log(`  Attempts: ${execution.attempts} | Retries: ${execution.retriesPerformed} | Timeouts: ${execution.timeoutCount}`);
+    console.log(`  Fallback: ${execution.fallbackUsed ? `yes (${execution.initialProvider}/${execution.initialModel} -> ${execution.selectedProvider}/${execution.selectedModel})` : 'no'}`);
+    console.log(`  Usage: requests=${execution.usage.requestCount}, tokens=${execution.usage.totalTokens ?? 'unavailable'} (${execution.usage.tokenAvailability})`);
+    console.log(`  Cost: ${formatUsd(execution.usage.actualCostUsd ?? execution.usage.estimatedCostUsd)} (${execution.usage.costAvailability})`);
+    if (execution.failureType) {
+      console.log(`  Failure: ${execution.failureType} - ${execution.failureMessage ?? 'n/a'}`);
+    }
+  }
+}
+
+export function displayWorkflowSummary(
+  runId: string,
+  success: boolean,
+  durationMs: number,
+  executions: ProviderExecutionSummary[] = []
+): void {
   const metrics = getGlobalMetricsCollector().getMetrics();
 
   console.log('\n--- Workflow Summary ---');
@@ -22,6 +60,8 @@ export function displayWorkflowSummary(runId: string, success: boolean, duration
       console.log(`Provider: ${provider.provider} (${provider.requestCount} requests)`);
     }
   }
+
+  displayProviderExecutions(executions);
 }
 
 export function displayFailureSummary(runId: string, phase: string, error: string): void {

@@ -70,6 +70,8 @@ node dist/server.js
     result.json           # Final results
 ```
 
+`run.json` and `result.json` may include `providerExecutions` with provider/model, retries, timeout/fallback, and usage/cost summary.
+
 ### Workflow Artifacts
 ```
 {projectPath}/
@@ -110,6 +112,7 @@ node dist/index.js history show <runId>
 
 **After Completion:**
 - Workflow summary with run ID, status, duration
+- Provider reliability summary
 - Provider usage statistics
 - Success/failure indicators
 
@@ -173,8 +176,8 @@ This runs:
 # Default: fake provider only
 pnpm run test
 
-# Opt-in: real provider (requires API key)
-SMOKE_TEST_REAL_PROVIDER=1 pnpm run test
+# Opt-in: real provider smoke workflow
+pnpm run test:smoke-real
 ```
 
 ## Environment Variables
@@ -195,6 +198,17 @@ None (uses fake provider by default)
 - `OPENAI_API_KEY` - OpenAI API key (if PROVIDER_MODE=real)
 - `ANTHROPIC_API_KEY` - Anthropic API key (if PROVIDER_MODE=real)
 - `MODEL_ID` - Custom model ID
+- `PROVIDER_TIMEOUT_MS` - Adapter timeout policy (per attempt)
+- `PROVIDER_MAX_RETRIES` - Bounded retry count
+- `PROVIDER_PRICE_INPUT_PER_MILLION_USD` - Optional input token rate for estimated cost
+- `PROVIDER_PRICE_OUTPUT_PER_MILLION_USD` - Optional output token rate for estimated cost
+- `PROVIDER_FALLBACK_TYPE` - Optional fallback provider type
+- `PROVIDER_FALLBACK_MODEL_ID` - Optional fallback model
+- `PROVIDER_FALLBACK_TIMEOUT_MS` - Optional fallback timeout policy
+- `PROVIDER_FALLBACK_MAX_RETRIES` - Optional fallback retry policy
+- `PROVIDER_FALLBACK_PRICE_INPUT_PER_MILLION_USD` - Optional fallback input rate
+- `PROVIDER_FALLBACK_PRICE_OUTPUT_PER_MILLION_USD` - Optional fallback output rate
+- `SMOKE_VALIDATE_POLICY=1` - Optional forced timeout/retry smoke validation
 
 ## Backend and Provider Operations (Phase 5A)
 
@@ -231,16 +245,19 @@ node dist/index.js workflow "your idea"
 **Real Provider (Opt-in - Requires API Key):**
 ```bash
 # OpenAI
-PROVIDER_MODE=real OPENAI_API_KEY=sk-xxx node dist/index.js workflow "your idea"
+PROVIDER_MODE=real OPENAI_API_KEY=sk-xxx MODEL_ID=gpt-4o-mini node dist/index.js workflow "your idea"
 
 # Anthropic
 PROVIDER_MODE=real PROVIDER_TYPE=anthropic ANTHROPIC_API_KEY=sk-ant-xxx node dist/index.js workflow "your idea"
 
-# Custom model
-PROVIDER_MODE=real OPENAI_API_KEY=sk-xxx MODEL_ID=gpt-4o-mini node dist/index.js workflow "your idea"
+# Conservative retry/timeout
+PROVIDER_MODE=real OPENAI_API_KEY=sk-xxx MODEL_ID=gpt-4o-mini PROVIDER_TIMEOUT_MS=15000 PROVIDER_MAX_RETRIES=1 node dist/index.js workflow "your idea"
+
+# Optional fallback
+PROVIDER_MODE=real OPENAI_API_KEY=sk-xxx MODEL_ID=gpt-4o-mini PROVIDER_FALLBACK_TYPE=anthropic ANTHROPIC_API_KEY=sk-ant-xxx PROVIDER_FALLBACK_MODEL_ID=claude-3-5-haiku-20241022 node dist/index.js workflow "your idea"
 ```
 
-**Cost Warning:** Real provider mode incurs API costs (~$0.01-0.10 per workflow).
+**Cost Warning:** Real provider mode incurs API costs. CLI history and workflow summary now show minimal usage/cost visibility, but this is not a billing system.
 
 ### Real Provider Smoke Test
 
@@ -250,11 +267,19 @@ OPENAI_API_KEY=sk-xxx node scripts/smoke-real-provider.mjs
 
 # Anthropic smoke test
 ANTHROPIC_API_KEY=sk-ant-xxx PROVIDER=anthropic node scripts/smoke-real-provider.mjs
+
+# Optional forced timeout/retry validation
+OPENAI_API_KEY=sk-xxx SMOKE_VALIDATE_POLICY=1 node scripts/smoke-real-provider.mjs
 ```
 
-Tests: streamText, generateStructured, getMetadata
+Tests:
+- metadata / capability surface
+- streamText
+- generateStructured
+- usage/cost visibility
+- optional timeout / retry / fallback validation
 
-See [docs/smoke-testing.md](smoke-testing.md) for details.
+See [docs/phase5c-smoke-validation.md](phase5c-smoke-validation.md) for details.
 
 ## Common Operations
 
@@ -330,7 +355,8 @@ pnpm run test -- --reporter=verbose
 
 - File-based persistence: suitable for <100 workflows
 - Single-user only: no concurrent execution support
-- Manual recovery: no automatic retry
+- Automatic provider retry is bounded inside `llm-adapter`
+- Workflow-level recovery still relies on manual rerun / phase skip detection
 
 ## Known Limitations
 
@@ -339,6 +365,7 @@ pnpm run test -- --reporter=verbose
 - No real-time metrics
 - SQLite backend requires native compilation (experimental)
 - Real provider mode opt-in only (not default)
-- Manual recovery only
+- Fallback is explicit only
+- Usage/cost visibility is minimal, not billing-grade
 
 See `docs/system-maturity.md` for full limitations.

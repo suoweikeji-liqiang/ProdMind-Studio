@@ -32,5 +32,24 @@ describe('Web Happy Path', () => {
     const html = renderResults('test-123');
     expect(html).toContain('Workflow Results');
     expect(html).toContain('test-123');
+    expect(html).toContain('Provider Reliability');
+  });
+
+  it('should render provider summary block', async () => {
+    const { renderProviderSummary } = await import('../src/views/result-renderer.js');
+    const html = renderProviderSummary([{
+      selectedProvider: 'fake',
+      selectedModel: 'fake-default',
+      retriesPerformed: 1,
+      timeoutCount: 0,
+      fallbackUsed: false,
+      usage: {
+        totalTokens: 42,
+        tokenAvailability: 'estimated',
+        costAvailability: 'unavailable',
+      },
+    }]);
+    expect(html).toContain('fake/fake-default');
+    expect(html).toContain('Retries:</strong> 1');
   });
 });

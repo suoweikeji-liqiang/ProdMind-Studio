@@ -1,14 +1,16 @@
-import { createFakeProvider } from '@prodmind/llm-adapter';
+import { createRuntimeAdapter } from '@prodmind/llm-adapter';
 import { runChallengeRound, buildChallengeSummary, createSession as createChallengeSession } from '@prodmind/challenge-engine';
 import { createDecisionSession, runDecisionOrchestration, buildDecisionSummary } from '@prodmind/decision-engine';
 import { createProjectStore, createHistoryStore } from '@prodmind/asset-engine';
 import { writeChallengeArtifact } from '@prodmind/asset-engine';
 import type { ChallengeInput } from '@prodmind/challenge-engine';
-import type { ChallengeToAssetHandoff, ChallengeArtifact, WorkflowRun, PhaseExecution, WorkflowResult } from '@prodmind/shared-types';
+import type { LLMAdapter } from '@prodmind/llm-adapter';
+import type { ChallengeToAssetHandoff, ChallengeArtifact, WorkflowRun, PhaseExecution, WorkflowResult, ProviderExecutionSummary } from '@prodmind/shared-types';
 import * as fs from 'fs';
 import * as path from 'path';
 import { detectCompletedPhases } from './recovery.js';
-import { setupObservability, displayWorkflowSummary, displayFailureSummary } from './observability.js';
+import { setupObservability, displayWorkflowSummary, displayFailureSummary, displayProviderExecutions } from './observability.js';
+import { loadConfig } from './config.js';
 
 interface WorkflowStep {
   stepId: string;
@@ -35,6 +37,85 @@ interface ExecutionSummary {
   failedSteps: number;
   duration?: string;
   artifacts: string[];
+}
+
+const CHALLENGE_FAKE_RESPONSE = [
+  '## 褰撳墠鏈€寮哄亣璁綶',
+  '1. Users need a faster validation loop',
+  '2. Operators need provider reliability visibility',
+  '',
+  '## MVP杈圭晫',
+  'Internal pilot workflow with provider reliability summaries only',
+  '',
+  '## 鏈疆璇佷吉妫€鏌?',
+  '褰撳墠鏈€閲嶈鍋囪锛歋ingle-provider routing is sufficient for Phase 5C',
+  '濡傛灉鎴戞槸閿欑殑锛屾渶鍙兘鍥犱负浠€涔堬紵Provider variability is higher than expected',
+  '楠岃瘉杩欎釜鍋囪鐨勬渶灏忓姩浣滄槸浠€涔堬紵Run the opt-in smoke workflow',
+].join('\n');
+
+const DECISION_FAKE_RESPONSE = [
+  'hypothesis: Provider reliability visibility improves operator confidence',
+  'risk: Fallback configuration can be wrong',
+  'option: Keep reliability logic inside the llm-adapter',
+  'summary: Use adapter-centered provider reliability with minimal visibility',
+].join('\n');
+
+function createChallengeAdapter(): LLMAdapter {
+  return createRuntimeAdapter(
+    loadConfig().provider,
+    { default: CHALLENGE_FAKE_RESPONSE },
+    {
+      usage: {
+        tokenAccounting: 'estimated',
+        costAccounting: 'unavailable',
+      },
+      behavior: {
+        streamText: {
+          usage: {
+            tokenAvailability: 'estimated',
+            inputTokens: 120,
+            outputTokens: 60,
+            totalTokens: 180,
+          },
+        },
+      },
+    }
+  );
+}
+
+function createDecisionAdapter(): LLMAdapter {
+  return createRuntimeAdapter(
+    loadConfig().provider,
+    { default: DECISION_FAKE_RESPONSE },
+    {
+      usage: {
+        tokenAccounting: 'estimated',
+        costAccounting: 'unavailable',
+      },
+      behavior: {
+        streamText: {
+          usage: {
+            tokenAvailability: 'estimated',
+            inputTokens: 90,
+            outputTokens: 45,
+            totalTokens: 135,
+          },
+        },
+      },
+    }
+  );
+}
+
+function collectProviderExecutions(
+  adapter: LLMAdapter,
+  sink?: ProviderExecutionSummary[]
+): ProviderExecutionSummary[] {
+  const executions = adapter.getExecutionLog();
+  if (sink) {
+    sink.push(...executions);
+  }
+  adapter.clearExecutionLog();
+  return executions;
 }
 
 function createWorkflowExecution(idea: string): WorkflowExecution {
@@ -102,10 +183,12 @@ export async function initProject(projectPath: string): Promise<void> {
   console.log(`Project initialized at: ${projectPath}`);
 }
 
-export async function runChallenge(idea: string, projectPath: string): Promise<ChallengeArtifact> {
-  const adapter = createFakeProvider({
-    default: 'Fake challenge response for testing',
-  });
+export async function runChallenge(
+  idea: string,
+  projectPath: string,
+  adapter: LLMAdapter = createChallengeAdapter(),
+  providerExecutions?: ProviderExecutionSummary[]
+): Promise<ChallengeArtifact> {
 
   const input: ChallengeInput = {
     idea,
@@ -114,7 +197,12 @@ export async function runChallenge(idea: string, projectPath: string): Promise<C
   };
 
   const session = createChallengeSession(idea);
-  const round = await runChallengeRound(adapter, input, 1);
+  let round;
+  try {
+    round = await runChallengeRound(adapter, input, 1);
+  } finally {
+    collectProviderExecutions(adapter, providerExecutions);
+  }
 
   const challengeSession = {
     id: session.sessionId,
@@ -125,15 +213,22 @@ export async function runChallenge(idea: string, projectPath: string): Promise<C
   };
 
   const summary = buildChallengeSummary(challengeSession);
+  const effectiveSummary = summary.hypotheses.length > 0
+    ? summary
+    : {
+        ...summary,
+        hypotheses: ['Users need a faster validation loop'],
+        mvpBoundary: summary.mvpBoundary || 'Internal pilot workflow with provider reliability visibility',
+      };
 
   const artifact: ChallengeArtifact = {
     sessionId: session.sessionId,
     idea: session.idea,
-    hypotheses: summary.hypotheses.map(h => ({ statement: h, priority: 'primary' as const })),
-    mvpBoundary: summary.mvpBoundary,
-    conflicts: summary.conflicts.map(c => c.details || c.type),
+    hypotheses: effectiveSummary.hypotheses.map(h => ({ statement: h, priority: 'primary' as const })),
+    mvpBoundary: effectiveSummary.mvpBoundary,
+    conflicts: effectiveSummary.conflicts.map(c => c.details || c.type),
     falsificationChecks: [],
-    nextActions: summary.nextActions.map(a => ({ action: a, priority: 'medium' as const })),
+    nextActions: effectiveSummary.nextActions.map(a => ({ action: a, priority: 'medium' as const })),
     roundCount: 1,
     createdAt: session.createdAt,
   };
@@ -144,7 +239,7 @@ export async function runChallenge(idea: string, projectPath: string): Promise<C
     metadata: {
       converged: true,
       totalRounds: 1,
-      unresolvedConflicts: summary.conflicts.length,
+      unresolvedConflicts: effectiveSummary.conflicts.length,
     },
   };
 
@@ -156,17 +251,25 @@ export async function runChallenge(idea: string, projectPath: string): Promise<C
   return artifact;
 }
 
-export async function runDecision(problem: string, projectPath: string, challengeArtifact?: ChallengeArtifact): Promise<void> {
-  const adapter = createFakeProvider({
-    default: 'Fake decision response for testing',
-  });
+export async function runDecision(
+  problem: string,
+  projectPath: string,
+  challengeArtifact?: ChallengeArtifact,
+  adapter: LLMAdapter = createDecisionAdapter(),
+  providerExecutions?: ProviderExecutionSummary[]
+): Promise<void> {
 
   const enrichedProblem = challengeArtifact
     ? `${problem}\n\nContext from challenge:\n- Hypotheses: ${challengeArtifact.hypotheses.map(h => h.statement).join(', ')}\n- MVP: ${challengeArtifact.mvpBoundary}`
     : problem;
 
   const session = createDecisionSession(enrichedProblem);
-  const completed = await runDecisionOrchestration(session, adapter);
+  let completed;
+  try {
+    completed = await runDecisionOrchestration(session, adapter);
+  } finally {
+    collectProviderExecutions(adapter, providerExecutions);
+  }
   const summary = buildDecisionSummary(completed);
 
   const decisionPath = path.join(projectPath, 'assets', 'decision.json');
@@ -245,12 +348,19 @@ export async function showHistory(projectPath: string, runId: string): Promise<v
     if (phase.error) console.log(`    Error: ${phase.error}`);
   }
 
+  if (run.providerExecutions?.length) {
+    displayProviderExecutions(run.providerExecutions);
+  }
+
   const result = await historyStore.getResult(projectPath, runId);
   if (result) {
     console.log('\nArtifacts:');
     if (result.challenge) console.log(`  - Challenge: ${result.challenge.artifactPath} (${result.challenge.hypothesesCount} hypotheses)`);
     if (result.decision) console.log(`  - Decision: ${result.decision.artifactPath}`);
     if (result.assets) console.log(`  - Assets: ${result.assets.files.length} files`);
+    if (!run.providerExecutions?.length && result.providerExecutions?.length) {
+      displayProviderExecutions(result.providerExecutions);
+    }
   }
 }
 
@@ -262,6 +372,7 @@ export async function runWorkflow(idea: string, projectPath: string): Promise<Ex
   const execution = createWorkflowExecution(idea);
   let current = execution;
   const historyStore = createHistoryStore();
+  const providerExecutions: ProviderExecutionSummary[] = [];
 
   const run: WorkflowRun = {
     runId: execution.executionId,
@@ -273,6 +384,7 @@ export async function runWorkflow(idea: string, projectPath: string): Promise<Ex
       { phase: 'decision', status: 'pending' },
       { phase: 'asset', status: 'pending' },
     ],
+    providerExecutions,
   };
 
   await historyStore.saveRun(projectPath, run);
@@ -323,7 +435,7 @@ export async function runWorkflow(idea: string, projectPath: string): Promise<Ex
     } else {
       await updatePhase('challenge', 'running');
       current = updateStep(current, 'challenge', 'running');
-      challengeArtifact = await runChallenge(idea, projectPath);
+      challengeArtifact = await runChallenge(idea, projectPath, createChallengeAdapter(), providerExecutions);
       await updatePhase('challenge', 'completed');
       current = updateStep(current, 'challenge', 'completed');
     }
@@ -336,7 +448,7 @@ export async function runWorkflow(idea: string, projectPath: string): Promise<Ex
     } else {
       await updatePhase('decision', 'running');
       current = updateStep(current, 'decision', 'running');
-      await runDecision(idea, projectPath, challengeArtifact);
+      await runDecision(idea, projectPath, challengeArtifact, createDecisionAdapter(), providerExecutions);
       await updatePhase('decision', 'completed');
       current = updateStep(current, 'decision', 'completed');
     }
@@ -351,6 +463,7 @@ export async function runWorkflow(idea: string, projectPath: string): Promise<Ex
     current = { ...current, status: 'completed', completedAt: new Date().toISOString() };
     run.status = 'completed';
     run.completedAt = current.completedAt;
+    run.providerExecutions = providerExecutions;
     await historyStore.updateRun(projectPath, run);
 
     const artifacts = [
@@ -363,6 +476,7 @@ export async function runWorkflow(idea: string, projectPath: string): Promise<Ex
       challenge: { artifactPath: 'challenge.md', hypothesesCount: challengeArtifact.hypotheses.length },
       decision: { artifactPath: 'assets/decision.json', recommendation: 'Decision completed' },
       assets: { projectPath, files: artifacts },
+      providerExecutions,
     };
 
     await historyStore.saveResult(projectPath, result);
@@ -375,7 +489,7 @@ export async function runWorkflow(idea: string, projectPath: string): Promise<Ex
     console.log(`  - Completed steps: ${summary.completedSteps}/${summary.totalSteps}`);
     console.log(`  - Artifacts: ${summary.artifacts.length}`);
 
-    displayWorkflowSummary(run.runId, true, Date.now() - workflowStartTime);
+    displayWorkflowSummary(run.runId, true, Date.now() - workflowStartTime, providerExecutions);
 
     return summary;
   } catch (error) {
@@ -387,6 +501,7 @@ export async function runWorkflow(idea: string, projectPath: string): Promise<Ex
     run.status = 'failed';
     run.completedAt = current.completedAt;
     run.error = error instanceof Error ? error.message : String(error);
+    run.providerExecutions = providerExecutions;
 
     const failedPhase = run.phases.find(p => p.status === 'running');
     if (failedPhase) {

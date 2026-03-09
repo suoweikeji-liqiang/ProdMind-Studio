@@ -1,18 +1,88 @@
+import type { z } from 'zod';
+import type {
+  CorrelationContext,
+  ProviderCapabilityProfile,
+  ProviderExecutionSummary,
+  ProviderSelectionRequirement,
+} from '@prodmind/shared-types';
+
+export type LLMMessage = {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+};
+
+export type LLMProvider = 'fake' | 'openai' | 'anthropic';
+
+export type ProviderErrorType =
+  | 'rate_limit'
+  | 'auth'
+  | 'network'
+  | 'invalid_request'
+  | 'model_error'
+  | 'timeout'
+  | 'capability_mismatch'
+  | 'retry_exhausted'
+  | 'fallback_failed'
+  | 'fallback_not_configured'
+  | 'unknown';
+
 export type ProviderError = {
-  type: 'rate_limit' | 'auth' | 'network' | 'invalid_request' | 'model_error' | 'unknown';
+  type: ProviderErrorType;
   message: string;
   retryable: boolean;
   originalError?: unknown;
 };
 
-export type ProviderCapabilities = {
-  streaming: boolean;
-  structuredOutput: boolean;
-  maxTokens?: number;
-};
+export interface LLMRequestOptions {
+  requiredCapabilities?: ProviderSelectionRequirement;
+  timeoutMs?: number;
+  maxRetries?: number;
+}
 
-export type ProviderMetadata = {
-  name: string;
-  version: string;
-  capabilities: ProviderCapabilities;
-};
+export interface LLMAdapter {
+  streamText(
+    messages: LLMMessage[],
+    onToken: (token: string) => void,
+    correlation?: CorrelationContext,
+    options?: LLMRequestOptions
+  ): Promise<string>;
+  generateStructured<T>(
+    messages: LLMMessage[],
+    schema: z.ZodSchema<T>,
+    correlation?: CorrelationContext,
+    options?: LLMRequestOptions
+  ): Promise<T>;
+  getMetadata(): ProviderCapabilityProfile;
+  getExecutionLog(): ProviderExecutionSummary[];
+  clearExecutionLog(): void;
+}
+
+export interface LLMPricingConfig {
+  inputPerMillionUsd?: number;
+  outputPerMillionUsd?: number;
+}
+
+export interface LLMConfig {
+  provider: Exclude<LLMProvider, 'fake'>;
+  apiKey: string;
+  modelId: string;
+  baseURL?: string;
+  timeoutMs?: number;
+  maxRetries?: number;
+  pricing?: LLMPricingConfig;
+  fallback?: Omit<LLMConfig, 'fallback'>;
+}
+
+export type ProviderMetadata = ProviderCapabilityProfile;
+
+export class LLMProviderError extends Error {
+  readonly normalized: ProviderError;
+  readonly execution?: ProviderExecutionSummary;
+
+  constructor(normalized: ProviderError, execution?: ProviderExecutionSummary) {
+    super(`[${normalized.type}] ${normalized.message}`);
+    this.name = 'LLMProviderError';
+    this.normalized = normalized;
+    this.execution = execution;
+  }
+}

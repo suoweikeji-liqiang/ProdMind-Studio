@@ -78,5 +78,9 @@ export async function callRole(
     { role: 'user', content: userMessage },
   ];
 
-  return adapter.streamText(messages, () => {});
+  return adapter.streamText(messages, () => {}, undefined, {
+    requiredCapabilities: {
+      streaming: true,
+    },
+  });
 }

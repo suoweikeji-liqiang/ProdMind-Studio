@@ -56,6 +56,12 @@ Documentation is grouped for fast engineering execution.
 - [observability-standards.md](observability-standards.md) - Cross-phase observability standards
 - [phase5b-deferred.md](phase5b-deferred.md) - Deferred items for Phase 5C
 
+## Provider Maturity (Phase 5C)
+- [phase5c-provider-capability-boundary.md](phase5c-provider-capability-boundary.md) - Capability, reliability, and routing boundary
+- [phase5c-usage-surface.md](phase5c-usage-surface.md) - Usage and cost visibility contract
+- [phase5c-smoke-validation.md](phase5c-smoke-validation.md) - Real-provider smoke validation flow
+- [phase5c-deferred.md](phase5c-deferred.md) - Deferred items before Phase 5D
+
 ## Execution
 - [ci-plan.md](ci-plan.md)
 - [runbook.md](runbook.md) - Practical operator guide for running the system

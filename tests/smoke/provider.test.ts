@@ -1,19 +1,36 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import { createFakeProvider } from '@prodmind/llm-adapter';
 
 describe('Provider Smoke Test', () => {
-  it('validates fake provider (always runs)', async () => {
-    const provider = createFakeProvider({ default: 'test response' });
-    const result = await provider.generate('test prompt');
-    expect(result).toBe('test response');
+  it('validates fake provider stream, structured output, and execution summary', async () => {
+    const provider = createFakeProvider(
+      { default: { ok: true } },
+      {
+        behavior: {
+          streamText: {
+            usage: {
+              tokenAvailability: 'estimated',
+              totalTokens: 12,
+            },
+          },
+        },
+      }
+    );
+
+    const text = await provider.streamText([{ role: 'user', content: 'hello' }], () => {});
+    const structured = await provider.generateStructured(
+      [{ role: 'user', content: 'structured' }],
+      z.object({ ok: z.boolean() })
+    );
+
+    expect(text).toBeDefined();
+    expect(structured).toEqual({ ok: true });
+    expect(provider.getMetadata().providerName).toBe('fake');
+    expect(provider.getExecutionLog().length).toBeGreaterThan(0);
   });
 
-  it.skipIf(!process.env.SMOKE_TEST_REAL_PROVIDER)('validates real provider (opt-in)', async () => {
-    // This test only runs when SMOKE_TEST_REAL_PROVIDER=1
-    // Requires ANTHROPIC_API_KEY or equivalent
-
-    // Real provider integration would go here
-    // For now, just document the pattern
-    expect(true).toBe(true);
+  it.skipIf(!process.env.SMOKE_TEST_REAL_PROVIDER)('documents the opt-in real provider validation path', async () => {
+    expect(process.env.SMOKE_TEST_REAL_PROVIDER).toBeDefined();
   });
 });

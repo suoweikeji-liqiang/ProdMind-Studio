@@ -8,6 +8,7 @@ export * from './persistence/store.js';
 export * from './persistence/repository.js';
 export * from './workflow/execution.js';
 export * from './workflow/history.js';
+export * from './provider/contracts.js';
 export * from './observability/events.js';
 export * from './observability/metrics.js';
 export * from './observability/failure.js';

@@ -1,10 +1,4 @@
-import type { PersistenceConfig } from '@prodmind/shared-types';
 import type { RuntimeProviderConfig } from '@prodmind/llm-adapter';
-
-export type RuntimeConfig = {
-  persistence: PersistenceConfig;
-  provider: RuntimeProviderConfig;
-};
 
 function readNumber(value: string | undefined): number | undefined {
   if (!value) {
@@ -15,13 +9,12 @@ function readNumber(value: string | undefined): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-export function loadConfig(): RuntimeConfig {
-  const persistenceBackend = (process.env.PERSISTENCE_BACKEND || 'file') as 'file' | 'sqlite';
+export function loadProviderConfig(): RuntimeProviderConfig {
   const providerMode = (process.env.PROVIDER_MODE || 'fake') as 'fake' | 'real';
   const providerType = (process.env.PROVIDER_TYPE || 'openai') as 'openai' | 'anthropic';
   const fallbackType = process.env.PROVIDER_FALLBACK_TYPE as 'openai' | 'anthropic' | undefined;
 
-  const provider = {
+  return {
     mode: providerMode,
     type: providerType,
     apiKey: process.env[`${providerType.toUpperCase()}_API_KEY`],
@@ -49,14 +42,5 @@ export function loadConfig(): RuntimeConfig {
             : undefined,
         }
       : undefined,
-  } satisfies RuntimeProviderConfig;
-
-  return {
-    persistence: {
-      backend: persistenceBackend,
-      basePath: process.env.PERSISTENCE_PATH,
-      connectionString: process.env.PERSISTENCE_CONNECTION,
-    },
-    provider,
   };
 }

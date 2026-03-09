@@ -25,7 +25,11 @@ export async function runDecisionStep(
     .replace('{problem}', session.problem)
     .replace('{stepType}', stepType);
 
-  const response = await adapter.streamText([{ role: 'user', content: prompt }], () => {});
+  const response = await adapter.streamText([{ role: 'user', content: prompt }], () => {}, undefined, {
+    requiredCapabilities: {
+      streaming: true,
+    },
+  });
 
   const step: DecisionStep = {
     stepId: `step-${session.steps.length + 1}`,

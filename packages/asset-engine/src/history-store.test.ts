@@ -5,19 +5,19 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 describe('HistoryStore', () => {
-  const testDir = path.join(process.cwd(), '.test-history');
+  const testDir = path.join(process.cwd(), '.test-history-store');
   const store = createHistoryStore();
 
   beforeEach(() => {
     if (fs.existsSync(testDir)) {
-      fs.rmSync(testDir, { recursive: true });
+      fs.rmSync(testDir, { recursive: true, force: true });
     }
     fs.mkdirSync(testDir, { recursive: true });
   });
 
   afterEach(() => {
     if (fs.existsSync(testDir)) {
-      fs.rmSync(testDir, { recursive: true });
+      fs.rmSync(testDir, { recursive: true, force: true });
     }
   });
 
@@ -31,6 +31,22 @@ describe('HistoryStore', () => {
         { phase: 'challenge', status: 'pending' },
         { phase: 'decision', status: 'pending' },
         { phase: 'asset', status: 'pending' },
+      ],
+      providerExecutions: [
+        {
+          selectedProvider: 'fake',
+          selectedModel: 'fake-default',
+          attempts: 1,
+          retriesPerformed: 0,
+          timeoutCount: 0,
+          fallbackUsed: false,
+          usage: {
+            requestCount: 1,
+            tokenAvailability: 'estimated',
+            totalTokens: 42,
+            costAvailability: 'unavailable',
+          },
+        },
       ],
     };
 
@@ -80,6 +96,22 @@ describe('HistoryStore', () => {
       runId: 'run-3',
       challenge: { artifactPath: 'challenge.md', hypothesesCount: 3 },
       decision: { artifactPath: 'decision.json', recommendation: 'Use approach A' },
+      providerExecutions: [
+        {
+          selectedProvider: 'fake',
+          selectedModel: 'fake-default',
+          attempts: 1,
+          retriesPerformed: 0,
+          timeoutCount: 0,
+          fallbackUsed: false,
+          usage: {
+            requestCount: 1,
+            tokenAvailability: 'estimated',
+            totalTokens: 15,
+            costAvailability: 'unavailable',
+          },
+        },
+      ],
     };
 
     await store.saveResult(testDir, result);

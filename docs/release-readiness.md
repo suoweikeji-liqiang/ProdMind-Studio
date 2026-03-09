@@ -1,211 +1,114 @@
 # Release Readiness Checklist
 
-## Assessment Date: 2026-03-08
+## Assessment Date: 2026-03-09
 
-## Stage: Phase 5B Complete
+## Stage: Phase 5C Complete
 
 ## Checklist
 
 ### Core Functionality
-- [x] Workflow main path operational (idea → challenge → decision → assets)
+- [x] Workflow main path operational (idea -> challenge -> decision -> assets)
 - [x] CLI can execute full workflow
 - [x] Web can execute full workflow
 - [x] Challenge engine produces artifacts
 - [x] Decision engine produces artifacts
 - [x] Asset engine writes files correctly
 
-### Interfaces
-- [x] CLI commands functional
-- [x] CLI help text available
-- [x] Web server starts successfully
-- [x] Web API endpoints respond correctly
-- [x] History commands work (list, show)
-
-### Persistence & Recovery (Phase 5A Enhanced)
-- [x] Persistence abstraction boundary defined
-- [x] File backend operational (default, production-ready)
-- [x] SQLite backend implemented (validation, requires native compilation)
-- [x] Backend selection via environment variables
+### Persistence & Recovery
+- [x] File backend operational (default)
+- [x] SQLite backend remains implemented behind the abstraction
 - [x] Workflow history persists to disk
 - [x] History can be listed and retrieved
 - [x] Phase skip detection works
-- [x] Manual retry functional
-- [x] Error context captured
+- [x] Workflow-level manual recovery remains available
 
-### Provider Integration (Phase 5A Enhanced)
-- [x] Provider boundary formalized
-- [x] Error normalization implemented
+### Provider Maturity (Phase 5C)
+- [x] Provider capability / reliability contracts defined
+- [x] Capability-aware mismatch handling implemented
 - [x] Fake provider operational (default, CI-safe)
-- [x] Real provider smoke workflow available (opt-in)
-- [x] Provider observability hooks added
-- [x] Provider metadata exposed
-
-### Observability (Phase 5B Enhanced)
-- [x] Structured observability contract defined
-- [x] Correlation context propagation implemented
-- [x] Structured events replace ad-hoc logging
-- [x] Failure diagnosis path established
-- [x] Minimal metrics surface exposed
-- [x] CLI displays observability summary
-- [x] Phase timing recorded
-- [x] Workflow status tracked
-- [x] Error messages normalized with context
-- [x] Run history accessible
-- [x] Provider events structured
+- [x] Real provider workflow available (opt-in)
+- [x] Bounded timeout and retry implemented in `llm-adapter`
+- [x] Explicit fallback path implemented
+- [x] Provider execution summaries persisted
+- [x] Minimal usage / cost visibility exposed
+- [x] CLI displays provider reliability summary
+- [x] Web displays minimal provider reliability summary
+- [x] Enhanced real-provider smoke workflow documented
 
 ### Quality Gates
 - [x] docs-check passes
 - [x] boundary-check passes
 - [x] forbidden-deps-check passes
-- [x] lint passes (all workspaces)
-- [x] typecheck passes (all workspaces)
-- [x] test passes (file backend)
-- [x] build passes (all workspaces)
+- [x] lint passes
+- [x] typecheck passes
+- [x] test passes
+- [x] build passes
 
-### Documentation
-- [x] README describes current state (Phase 5B)
-- [x] System maturity documented
-- [x] Runbook available (Phase 5B updated)
-- [x] System map available
-- [x] Phase 5A docs indexed
-- [x] Phase 5B docs indexed
-- [x] Observability standards documented
-- [x] Known limitations documented
-- [x] Backend/provider configuration documented
-
-### Testing
-- [x] Fake provider tests pass
-- [x] File backend tests pass (4/4)
-- [x] Smoke test strategy documented
-- [x] History store tests pass
-- [ ] SQLite backend tests (requires native compilation)
-- [ ] Real provider smoke test (opt-in, not blocking)
+### Environment-specific Notes
+- [ ] SQLite runtime validation in this environment (native binding unavailable here)
+- [ ] Real provider smoke run in this environment (opt-in, non-blocking)
 
 ## Known Limitations
 
 ### Architecture
 - Single-user execution only
-- File-based persistence default (SQLite experimental)
+- File-based persistence default
 - No concurrent workflow support
 - No distributed execution
 
-### Features
+### Provider Scope
+- Real provider mode remains opt-in
+- Fallback is explicit only
+- Routing is capability-aware but still minimal
+- Usage/cost visibility is minimal, not billing-grade
+- No provider marketplace
+- No dynamic provider discovery
+
+### Product Scope
 - No authentication or authorization
 - No multi-user collaboration
-- No real-time metrics dashboard
-- No automatic retry/recovery
-- Real provider opt-in only (fake provider default)
-
-### Persistence (Phase 5A)
-- **File backend:** Production-ready, suitable for <100 workflows
-- **SQLite backend:** Experimental, requires native compilation (Visual Studio on Windows)
-- No automatic migration between backends
-- No cross-backend replication
-
-### Provider Integration (Phase 5A)
-- **Fake provider:** Default, CI-safe, no costs
-- **Real provider:** Opt-in, requires API keys, incurs costs
-- No automatic provider fallback
-- No provider marketplace
-
-### Scalability
-- Suitable for <100 workflows (file backend)
-- File-based storage not optimized for large volumes
-- No query/filtering capabilities
-- No pagination for history
-
-### Operations
-- Manual recovery only
-- No alerting or monitoring
-- No performance profiling
-- No cost tracking
+- No dashboard analytics product
+- No heavy DB productization
 
 ## Readiness Assessment
 
-### Internal Pilot: ✓ READY
+### Internal Pilot: READY
 
-**Rationale:**
-- Core workflow functional and tested
-- CLI and Web interfaces operational
-- History and recovery working
-- Documentation complete
-- Quality gates passing
-- Known limitations clearly documented
+Rationale:
 
-**Suitable For:**
-- Local development and testing
-- Single-user product exploration
-- Internal demonstrations
-- Proof-of-concept validation
-- Learning the workflow model
+- Core workflow remains stable
+- Provider variability is handled more safely than Phase 5B
+- Provider selection failures are clearer
+- Operators can see provider/model, retries, timeout/fallback, and usage summary
+- Real-provider validation path is stronger while staying opt-in
 
-**Prerequisites:**
-- Node.js 18+ installed
-- pnpm installed
-- Basic command-line familiarity
-- Understanding of single-user limitations
+### Broader Rollout: NOT READY
 
-### Broader Rollout: ✗ NOT READY
+Blocking issues:
 
-**Blocking Issues:**
-1. No authentication/authorization
-2. No multi-user support
-3. File-based persistence not scalable (SQLite experimental)
-4. Real provider opt-in only (not default)
-5. No automatic recovery
-6. No real-time monitoring
-7. No production deployment infrastructure
-
-**Required for Broader Rollout:**
-- Phase 5B: Observability enhancement (structured logging, metrics)
-- Phase 5C: PostgreSQL backend (production-grade persistence)
-- Phase 5D: Automatic retry with backoff
-- Phase 6: Authentication and multi-user support
-- Phase 6: Production deployment infrastructure
+1. No auth or multi-user support
+2. Persistence is still file-default and pilot-oriented
+3. Provider routing is still minimal
+4. Usage/cost visibility is not billing-grade
+5. No operational dashboard or production deployment layer
 
 ## Recommended Next Steps
 
-### Before Internal Pilot
-1. Run `pnpm run check:all` to verify quality gates
-2. Test full workflow locally with CLI
-3. Test full workflow locally with Web
-4. Review `docs/runbook.md` for operational procedures
-5. Review `docs/system-maturity.md` for limitations
+### Before Internal Pilot Usage
+1. Run `pnpm run check:all`
+2. Run one fake-provider workflow in CLI
+3. Run one fake-provider workflow in Web
+4. Review `docs/runbook.md`
+5. Optionally run `node scripts/smoke-real-provider.mjs`
 
-### During Internal Pilot
-1. Collect feedback on workflow usability
-2. Monitor file-based persistence performance
-3. Document any edge cases or failures
-4. Track manual recovery frequency
-5. Identify most-needed Phase 5 features
-
-### After Internal Pilot
-1. Prioritize Phase 5 features based on feedback
-2. Plan database migration strategy
-3. Design authentication approach
-4. Evaluate real LLM provider options
-5. Define production deployment requirements
+### Candidate Phase 5D Themes
+1. Smarter provider routing beyond explicit fallback
+2. Reliability policy tuning based on real smoke findings
+3. Budget guardrails only if actually needed
+4. Stronger SQLite / next-backend validation in environments with native support
 
 ## Sign-Off
 
-**Phase 5A Status:** COMPLETE
+**Phase 5C Status:** COMPLETE
 **Internal Pilot Ready:** YES
 **Broader Rollout Ready:** NO
-
-**Phase 5A Achievements:**
-- Persistence abstraction boundary established
-- Second backend validation (SQLite)
-- Provider integration formalized
-- Real provider smoke workflow available
-
-**Approved For:**
-- Internal pilot with single users
-- Local development and testing
-- Proof-of-concept demonstrations
-- Backend/provider experimentation
-
-**Not Approved For:**
-- Production deployment at scale
-- Multi-user collaboration
-- Mission-critical workflows
-- External customer usage

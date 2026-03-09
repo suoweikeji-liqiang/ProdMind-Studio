@@ -1,22 +1,34 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { createRequire } from 'node:module';
 import { createHistoryStore } from '../history-store.js';
+import { createSqliteRepository } from './sqlite-repository.js';
 import type { WorkflowRun, WorkflowResult } from '@prodmind/shared-types';
 import * as fs from 'fs';
 import * as path from 'path';
 
 describe('HistoryStore - Backend Integration', () => {
-  const testDir = path.join(process.cwd(), '.test-history');
+  const testDir = path.join(process.cwd(), '.test-history-backends');
+  const require = createRequire(import.meta.url);
+  const sqliteAvailable = (() => {
+    try {
+      require('better-sqlite3');
+      createSqliteRepository(path.join(process.cwd(), '.test-sqlite-probe.db'));
+      return true;
+    } catch {
+      return false;
+    }
+  })();
 
   beforeEach(() => {
     if (fs.existsSync(testDir)) {
-      fs.rmSync(testDir, { recursive: true });
+      fs.rmSync(testDir, { recursive: true, force: true });
     }
     fs.mkdirSync(testDir, { recursive: true });
   });
 
   afterEach(() => {
     if (fs.existsSync(testDir)) {
-      fs.rmSync(testDir, { recursive: true });
+      fs.rmSync(testDir, { recursive: true, force: true });
     }
   });
 
@@ -28,6 +40,22 @@ describe('HistoryStore - Backend Integration', () => {
     phases: [
       { phase: 'challenge', status: 'completed', startedAt: new Date().toISOString() }
     ],
+    providerExecutions: [
+      {
+        selectedProvider: 'fake',
+        selectedModel: 'fake-default',
+        attempts: 1,
+        retriesPerformed: 0,
+        timeoutCount: 0,
+        fallbackUsed: false,
+        usage: {
+          requestCount: 1,
+          tokenAvailability: 'estimated',
+          totalTokens: 21,
+          costAvailability: 'unavailable',
+        },
+      },
+    ],
   };
 
   const testResult: WorkflowResult = {
@@ -36,6 +64,22 @@ describe('HistoryStore - Backend Integration', () => {
       artifactPath: '/test/path',
       hypothesesCount: 3,
     },
+    providerExecutions: [
+      {
+        selectedProvider: 'fake',
+        selectedModel: 'fake-default',
+        attempts: 1,
+        retriesPerformed: 0,
+        timeoutCount: 0,
+        fallbackUsed: false,
+        usage: {
+          requestCount: 1,
+          tokenAvailability: 'estimated',
+          totalTokens: 21,
+          costAvailability: 'unavailable',
+        },
+      },
+    ],
   };
 
   describe('File Backend', () => {
@@ -73,7 +117,7 @@ describe('HistoryStore - Backend Integration', () => {
     });
   });
 
-  describe('SQLite Backend', () => {
+  describe.skipIf(!sqliteAvailable)('SQLite Backend', () => {
     it('should save and retrieve run', async () => {
       const store = createHistoryStore({
         backend: 'sqlite',

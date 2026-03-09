@@ -12,7 +12,8 @@ export function createSqliteRepository(dbPath: string): PersistenceRepository {
       startedAt TEXT NOT NULL,
       completedAt TEXT,
       phases TEXT NOT NULL,
-      error TEXT
+      error TEXT,
+      providerExecutions TEXT
     );
 
     CREATE TABLE IF NOT EXISTS results (
@@ -20,6 +21,7 @@ export function createSqliteRepository(dbPath: string): PersistenceRepository {
       challenge TEXT,
       decision TEXT,
       assets TEXT,
+      providerExecutions TEXT,
       FOREIGN KEY (runId) REFERENCES runs(runId)
     );
 
@@ -29,8 +31,8 @@ export function createSqliteRepository(dbPath: string): PersistenceRepository {
   return {
     async saveRun(run: WorkflowRun): Promise<void> {
       const stmt = db.prepare(`
-        INSERT INTO runs (runId, idea, status, startedAt, completedAt, phases, error)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO runs (runId, idea, status, startedAt, completedAt, phases, error, providerExecutions)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `);
       stmt.run(
         run.runId,
@@ -39,14 +41,15 @@ export function createSqliteRepository(dbPath: string): PersistenceRepository {
         run.startedAt,
         run.completedAt || null,
         JSON.stringify(run.phases),
-        run.error || null
+        run.error || null,
+        run.providerExecutions ? JSON.stringify(run.providerExecutions) : null
       );
     },
 
     async updateRun(run: WorkflowRun): Promise<void> {
       const stmt = db.prepare(`
         UPDATE runs
-        SET status = ?, completedAt = ?, phases = ?, error = ?
+        SET status = ?, completedAt = ?, phases = ?, error = ?, providerExecutions = ?
         WHERE runId = ?
       `);
       stmt.run(
@@ -54,20 +57,22 @@ export function createSqliteRepository(dbPath: string): PersistenceRepository {
         run.completedAt || null,
         JSON.stringify(run.phases),
         run.error || null,
+        run.providerExecutions ? JSON.stringify(run.providerExecutions) : null,
         run.runId
       );
     },
 
     async saveResult(result: WorkflowResult): Promise<void> {
       const stmt = db.prepare(`
-        INSERT OR REPLACE INTO results (runId, challenge, decision, assets)
-        VALUES (?, ?, ?, ?)
+        INSERT OR REPLACE INTO results (runId, challenge, decision, assets, providerExecutions)
+        VALUES (?, ?, ?, ?, ?)
       `);
       stmt.run(
         result.runId,
         result.challenge ? JSON.stringify(result.challenge) : null,
         result.decision ? JSON.stringify(result.decision) : null,
-        result.assets ? JSON.stringify(result.assets) : null
+        result.assets ? JSON.stringify(result.assets) : null,
+        result.providerExecutions ? JSON.stringify(result.providerExecutions) : null
       );
     },
 
@@ -84,6 +89,7 @@ export function createSqliteRepository(dbPath: string): PersistenceRepository {
         completedAt: row.completedAt || undefined,
         phases: JSON.parse(row.phases),
         error: row.error || undefined,
+        providerExecutions: row.providerExecutions ? JSON.parse(row.providerExecutions) : undefined,
       }));
     },
 
@@ -99,6 +105,7 @@ export function createSqliteRepository(dbPath: string): PersistenceRepository {
         completedAt: row.completedAt || undefined,
         phases: JSON.parse(row.phases),
         error: row.error || undefined,
+        providerExecutions: row.providerExecutions ? JSON.parse(row.providerExecutions) : undefined,
       };
     },
 
@@ -111,6 +118,7 @@ export function createSqliteRepository(dbPath: string): PersistenceRepository {
         challenge: row.challenge ? JSON.parse(row.challenge) : undefined,
         decision: row.decision ? JSON.parse(row.decision) : undefined,
         assets: row.assets ? JSON.parse(row.assets) : undefined,
+        providerExecutions: row.providerExecutions ? JSON.parse(row.providerExecutions) : undefined,
       };
     },
   };

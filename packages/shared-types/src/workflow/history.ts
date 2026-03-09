@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ProviderExecutionSummarySchema } from '../provider/contracts.js';
 
 export const PhaseExecutionSchema = z.object({
   phase: z.enum(['challenge', 'decision', 'asset']),
@@ -20,6 +21,7 @@ export const WorkflowRunSchema = z.object({
   completedAt: z.string().optional(),
   phases: z.array(PhaseExecutionSchema),
   error: z.string().optional(),
+  providerExecutions: z.array(ProviderExecutionSummarySchema).optional(),
 });
 
 export type WorkflowRun = z.infer<typeof WorkflowRunSchema>;
@@ -38,6 +40,7 @@ export const WorkflowResultSchema = z.object({
     projectPath: z.string(),
     files: z.array(z.string()),
   }).optional(),
+  providerExecutions: z.array(ProviderExecutionSummarySchema).optional(),
 });
 
 export type WorkflowResult = z.infer<typeof WorkflowResultSchema>;

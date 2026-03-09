@@ -20,7 +20,7 @@ describe('CLI E2E Golden Path', () => {
   });
 
   it('should run full workflow: init -> challenge -> decision -> assets', async () => {
-    await runWorkflow(TEST_IDEA, TEST_PROJECT_PATH);
+    const summary = await runWorkflow(TEST_IDEA, TEST_PROJECT_PATH);
 
     expect(fs.existsSync(TEST_PROJECT_PATH)).toBe(true);
     expect(fs.existsSync(path.join(TEST_PROJECT_PATH, 'challenge.md'))).toBe(true);
@@ -35,6 +35,10 @@ describe('CLI E2E Golden Path', () => {
     const decision = JSON.parse(decisionContent);
     expect(decision).toHaveProperty('hypotheses');
     expect(decision).toHaveProperty('recommendation');
+
+    const resultPath = path.join(TEST_PROJECT_PATH, '.prodmind', 'history', summary.executionId, 'result.json');
+    const result = JSON.parse(fs.readFileSync(resultPath, 'utf8'));
+    expect(result.providerExecutions?.length).toBeGreaterThan(0);
   });
 
   it('should initialize project', async () => {

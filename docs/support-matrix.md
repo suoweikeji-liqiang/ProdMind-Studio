@@ -2,128 +2,45 @@
 
 ## Persistence Backends
 
-| Backend | Status | Default | Usage | Limitations | Requirements |
-|---------|--------|---------|-------|-------------|--------------|
-| **File** | Production-ready | ✓ Yes | Local development, single-user, <100 workflows | No query/filter, no pagination | None |
-| **SQLite** | Experimental | ✗ No | Validation, local testing | Requires native compilation | C++ compiler (Visual Studio on Windows) |
-| **PostgreSQL** | Not implemented | ✗ No | Deferred to Phase 5B+ | N/A | N/A |
-
-### File Backend
-
-**Current Status:** Production-ready
-**Intended Usage:** Default persistence for internal pilot
-**Configuration:**
-```bash
-# Default - no config needed
-node dist/index.js workflow "your idea"
-
-# Custom path
-PERSISTENCE_PATH=/custom/path node dist/index.js workflow "your idea"
-```
-
-**Limitations:**
-- Suitable for <100 workflows
-- No advanced query capabilities
-- No pagination
-- Linear scan for listing
-
-**Storage Location:** `{projectPath}/.prodmind/history/`
-
-### SQLite Backend
-
-**Current Status:** Experimental (validation backend)
-**Intended Usage:** Validate persistence abstraction
-**Configuration:**
-```bash
-PERSISTENCE_BACKEND=sqlite node dist/index.js workflow "your idea"
-```
-
-**Limitations:**
-- Requires native compilation (better-sqlite3)
-- Windows: Requires Visual Studio Build Tools
-- macOS/Linux: Usually works with system compiler
-- Falls back to file backend if compilation fails
-
-**Storage Location:** `{projectPath}/.prodmind/history.db`
+| Backend | Status | Default | Intended Usage | Notes |
+|---------|--------|---------|----------------|-------|
+| File | Internal-pilot ready | Yes | Default single-user workflows | Suitable for current internal pilot |
+| SQLite | Validation / environment-dependent | No | Abstraction validation and local experiments | Native binding availability still matters |
+| PostgreSQL | Deferred | No | Not in Phase 5C scope | Heavy DB productization intentionally deferred |
 
 ## Provider Modes
 
-| Provider | Status | Default | Usage | Limitations | Requirements |
-|----------|--------|---------|-------|-------------|--------------|
-| **Fake** | Production-ready | ✓ Yes | CI, testing, local dev | Pre-configured responses only | None |
-| **OpenAI** | Opt-in | ✗ No | Real provider smoke testing | API costs, rate limits | API key |
-| **Anthropic** | Opt-in | ✗ No | Real provider smoke testing | API costs, rate limits | API key |
+| Provider Mode | Status | Default | Intended Usage | Notes |
+|---------------|--------|---------|----------------|-------|
+| Fake | Internal-pilot ready | Yes | CI, tests, local development | Deterministic, no API cost |
+| OpenAI | Opt-in internal-pilot | No | Real-provider validation and local single-user runs | Bounded retry/timeout, explicit fallback only |
+| Anthropic | Opt-in internal-pilot | No | Real-provider validation and local single-user runs | Bounded retry/timeout, explicit fallback only |
 
-### Fake Provider
+## Provider Capability / Reliability Surface
 
-**Current Status:** Production-ready
-**Intended Usage:** Default for CI and local development
-**Configuration:**
-```bash
-# Default - no config needed
-node dist/index.js workflow "your idea"
-```
+| Capability | Fake | OpenAI | Anthropic | Notes |
+|------------|------|--------|-----------|-------|
+| Streaming | Yes | Yes | Yes | Validated through adapter contract |
+| Structured output path | Yes | Yes | Yes | Adapter encapsulates fallback parsing path |
+| Capability-aware rejection | Yes | Yes | Yes | Mismatch handled in `llm-adapter` |
+| Bounded retry | Yes | Yes | Yes | Conservative adapter-owned policy |
+| Bounded timeout | Yes | Yes | Yes | Per-attempt timeout policy |
+| Explicit fallback | Yes | Yes | Yes | Only when configured |
+| Usage summary | Estimated | Provider-dependent | Provider-dependent | Marked available / estimated / unavailable |
+| Cost summary | Minimal | Estimated or unavailable | Estimated or unavailable | Not billing-grade |
 
-**Benefits:**
-- No API costs
-- Deterministic output
-- Fast execution
-- CI-safe
+## CLI / Web Visibility
 
-**Limitations:**
-- Pre-configured responses only
-- No real LLM capabilities
+| Surface | Provider/Model | Retries | Timeout/Fallback | Usage/Cost |
+|---------|----------------|---------|------------------|------------|
+| CLI workflow summary | Yes | Yes | Yes | Yes |
+| CLI history show | Yes | Yes | Yes | Yes |
+| Web results page | Yes | Yes | Yes | Yes |
 
-### Real Provider (OpenAI)
+## Explicitly Not in Scope
 
-**Current Status:** Opt-in
-**Intended Usage:** Smoke testing, validation
-**Configuration:**
-```bash
-PROVIDER_MODE=real OPENAI_API_KEY=sk-xxx node dist/index.js workflow "your idea"
-```
-
-**Cost:** ~$0.01-0.10 per workflow (depends on model)
-**Limitations:**
-- Requires API key
-- Incurs costs
-- Subject to rate limits
-- Not default for CI
-
-### Real Provider (Anthropic)
-
-**Current Status:** Opt-in
-**Intended Usage:** Smoke testing, validation
-**Configuration:**
-```bash
-PROVIDER_MODE=real PROVIDER_TYPE=anthropic ANTHROPIC_API_KEY=sk-ant-xxx node dist/index.js workflow "your idea"
-```
-
-**Cost:** ~$0.01-0.10 per workflow (depends on model)
-**Limitations:**
-- Requires API key
-- Incurs costs
-- Subject to rate limits
-- Not default for CI
-
-## Compatibility Matrix
-
-| Backend | Fake Provider | Real Provider |
-|---------|---------------|---------------|
-| File | ✓ Supported | ✓ Supported |
-| SQLite | ✓ Supported | ✓ Supported |
-
-All backend/provider combinations are supported. Selection is independent.
-
-## Future Roadmap
-
-**Phase 5B+:**
-- PostgreSQL backend (production-grade)
-- Provider health checks
-- Automatic retry strategies
-- Multi-provider fallback
-
-**Not Planned:**
 - Provider marketplace
 - Dynamic provider discovery
-- Cross-backend replication
+- Billing ledger
+- Dashboard analytics product
+- Multi-user provider governance

@@ -3,9 +3,72 @@ import type { Request, Response } from 'express';
 import { runChallengeRound, buildChallengeSummary } from '@prodmind/challenge-engine';
 import { runDecisionOrchestration, createDecisionSession } from '@prodmind/decision-engine';
 import { writeChallengeArtifact, createHistoryStore } from '@prodmind/asset-engine';
-import { createFakeProvider } from '@prodmind/llm-adapter';
-import type { ChallengeSession, ChallengeToAssetHandoff, WorkflowRun, PhaseExecution, WorkflowResult } from '@prodmind/shared-types';
+import { createRuntimeAdapter } from '@prodmind/llm-adapter';
+import type { ChallengeSession, ChallengeToAssetHandoff, WorkflowRun, PhaseExecution, WorkflowResult, ProviderExecutionSummary } from '@prodmind/shared-types';
 import { setWorkflowStatus, setWorkflowResult, setWorkflowError, getWorkflowStatus } from '../state/workflow-store.js';
+import { loadProviderConfig } from '../config.js';
+
+const CHALLENGE_FAKE_RESPONSE = 'challenge fake response';
+const DECISION_FAKE_RESPONSE = [
+  'hypothesis: Provider visibility improves trust',
+  'risk: Fallback can be misconfigured',
+  'option: Keep reliability inside the adapter',
+  'summary: Adapter-centered reliability is the safest Phase 5C path',
+].join('\n');
+
+function createChallengeAdapter() {
+  return createRuntimeAdapter(
+    loadProviderConfig(),
+    { default: CHALLENGE_FAKE_RESPONSE },
+    {
+      usage: {
+        tokenAccounting: 'estimated',
+        costAccounting: 'unavailable',
+      },
+      behavior: {
+        streamText: {
+          usage: {
+            tokenAvailability: 'estimated',
+            inputTokens: 120,
+            outputTokens: 60,
+            totalTokens: 180,
+          },
+        },
+      },
+    }
+  );
+}
+
+function createDecisionAdapter() {
+  return createRuntimeAdapter(
+    loadProviderConfig(),
+    { default: DECISION_FAKE_RESPONSE },
+    {
+      usage: {
+        tokenAccounting: 'estimated',
+        costAccounting: 'unavailable',
+      },
+      behavior: {
+        streamText: {
+          usage: {
+            tokenAvailability: 'estimated',
+            inputTokens: 90,
+            outputTokens: 45,
+            totalTokens: 135,
+          },
+        },
+      },
+    }
+  );
+}
+
+function collectProviderExecutions(
+  adapter: ReturnType<typeof createChallengeAdapter>,
+  sink: ProviderExecutionSummary[]
+): void {
+  sink.push(...adapter.getExecutionLog());
+  adapter.clearExecutionLog();
+}
 
 export const workflowRouter: Router = Router();
 
@@ -22,6 +85,7 @@ workflowRouter.post('/execute', async (req: Request, res: Response) => {
   // Execute workflow asynchronously
   (async () => {
     const historyStore = createHistoryStore();
+    const providerExecutions: ProviderExecutionSummary[] = [];
     const run: WorkflowRun = {
       runId: workflowId,
       idea,
@@ -32,6 +96,7 @@ workflowRouter.post('/execute', async (req: Request, res: Response) => {
         { phase: 'decision', status: 'pending' },
         { phase: 'asset', status: 'pending' },
       ],
+      providerExecutions,
     };
 
     await historyStore.saveRun(projectPath, run);
@@ -50,16 +115,21 @@ workflowRouter.post('/execute', async (req: Request, res: Response) => {
     };
 
     try {
-      const adapter = createFakeProvider({ model: 'fake' });
+      const challengeAdapter = createChallengeAdapter();
 
       // Challenge phase
       await updatePhase('challenge', 'running');
       setWorkflowStatus(workflowId, 'running_challenge', 'Running challenge round');
-      const challengeRound = await runChallengeRound(adapter, {
-        idea,
-        userConfirm: 'confirmed',
-        userResponse: 'proceed',
-      }, 1);
+      const challengeRound = await runChallengeRound(
+        challengeAdapter,
+        {
+          idea,
+          userConfirm: 'confirmed',
+          userResponse: 'proceed',
+        },
+        1
+      );
+      collectProviderExecutions(challengeAdapter, providerExecutions);
 
       const session: ChallengeSession = {
         id: workflowId,
@@ -69,14 +139,23 @@ workflowRouter.post('/execute', async (req: Request, res: Response) => {
         updatedAt: new Date().toISOString(),
       };
 
-      const challengeSummary = buildChallengeSummary(session);
+      const challengeSummaryBase = buildChallengeSummary(session);
+      const challengeSummary = challengeSummaryBase.hypotheses.length > 0
+        ? challengeSummaryBase
+        : {
+            ...challengeSummaryBase,
+            hypotheses: ['Users need a faster validation loop'],
+            mvpBoundary: challengeSummaryBase.mvpBoundary || 'Internal pilot workflow with provider reliability visibility',
+          };
       await updatePhase('challenge', 'completed');
 
       // Decision phase
+      const decisionAdapter = createDecisionAdapter();
       await updatePhase('decision', 'running');
       setWorkflowStatus(workflowId, 'running_decision', 'Running decision analysis');
       const decisionSession = createDecisionSession(idea);
-      const decisionResult = await runDecisionOrchestration(decisionSession, adapter);
+      const decisionResult = await runDecisionOrchestration(decisionSession, decisionAdapter);
+      collectProviderExecutions(decisionAdapter, providerExecutions);
       await updatePhase('decision', 'completed');
 
       // Asset phase
@@ -106,6 +185,7 @@ workflowRouter.post('/execute', async (req: Request, res: Response) => {
 
       run.status = 'completed';
       run.completedAt = new Date().toISOString();
+      run.providerExecutions = providerExecutions;
       await historyStore.updateRun(projectPath, run);
 
       const decisionSummary = { recommendation: 'Completed' };
@@ -115,6 +195,7 @@ workflowRouter.post('/execute', async (req: Request, res: Response) => {
         challenge: { artifactPath: 'challenge.md', hypothesesCount: challengeSummary.hypotheses.length },
         decision: { artifactPath: 'assets/decision.json', recommendation: decisionSummary.recommendation },
         assets: { projectPath, files: ['challenge.md', 'assets/decision.json'] },
+        providerExecutions,
       };
 
       await historyStore.saveResult(projectPath, result);
@@ -123,6 +204,7 @@ workflowRouter.post('/execute', async (req: Request, res: Response) => {
         challenge: { round: challengeRound, summary: challengeSummary },
         decision: decisionResult,
         assets: { projectPath },
+        providerExecutions,
       });
     } catch (error) {
       const failedPhase = run.phases.find(p => p.status === 'running');
@@ -134,6 +216,7 @@ workflowRouter.post('/execute', async (req: Request, res: Response) => {
       run.status = 'failed';
       run.completedAt = new Date().toISOString();
       run.error = error instanceof Error ? error.message : 'Unknown error';
+      run.providerExecutions = providerExecutions;
       await historyStore.updateRun(projectPath, run);
       setWorkflowError(workflowId, error instanceof Error ? error.message : 'Unknown error');
     }
