@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { runWorkflow, initProject, runChallenge, runDecision, exportAssets } from '../src/commands.js';
-import { displayProviderExecutions } from '../src/observability.js';
+import { runWorkflow, initProject, runChallenge, runDecision, exportAssets, listHistory, showHistory } from '../src/commands.js';
+import { displayFailureSummary, displayProviderExecutions } from '../src/observability.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -127,5 +127,67 @@ describe('CLI E2E Golden Path', () => {
     expect(lines.join('\n')).toContain('Policy:');
     expect(lines.join('\n')).toContain('5000ms');
     expect(lines.join('\n')).toContain('Failure Stage:');
+  });
+
+  it('should show history list with revisit guidance and result summary', async () => {
+    const summary = await runWorkflow(TEST_IDEA, TEST_PROJECT_PATH);
+    const lines: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => {
+      lines.push(args.join(' '));
+    };
+
+    try {
+      await listHistory(TEST_PROJECT_PATH);
+    } finally {
+      console.log = originalLog;
+    }
+
+    const output = lines.join('\n');
+    expect(output).toContain('Workflow History');
+    expect(output).toContain(summary.executionId);
+    expect(output).toContain('Recommendation:');
+    expect(output).toContain('history show');
+  });
+
+  it('should show history detail with next steps and artifacts', async () => {
+    const summary = await runWorkflow(TEST_IDEA, TEST_PROJECT_PATH);
+    const lines: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => {
+      lines.push(args.join(' '));
+    };
+
+    try {
+      await showHistory(TEST_PROJECT_PATH, summary.executionId);
+    } finally {
+      console.log = originalLog;
+    }
+
+    const output = lines.join('\n');
+    expect(output).toContain('Workflow Run:');
+    expect(output).toContain('Recommendation:');
+    expect(output).toContain('Artifacts:');
+    expect(output).toContain('Next steps:');
+  });
+
+  it('should display failure summary with completed phases and next actions', () => {
+    const lines: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => {
+      lines.push(args.join(' '));
+    };
+
+    try {
+      displayFailureSummary('run-1', 'decision', 'Timeout while waiting for provider', ['challenge']);
+    } finally {
+      console.log = originalLog;
+    }
+
+    const output = lines.join('\n');
+    expect(output).toContain('Failed Phase: decision');
+    expect(output).toContain('System already completed: challenge');
+    expect(output).toContain('Next steps:');
+    expect(output).toContain('history show run-1');
   });
 });

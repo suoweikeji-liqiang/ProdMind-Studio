@@ -1,56 +1,56 @@
-# Backend and Provider Support Matrix
+# Support Matrix
+
+## V1 User Surfaces
+
+| Surface | Status | Intended Usage | Notes |
+|---------|--------|----------------|-------|
+| Web home | Internal V1 candidate | Start new workflows | Primary entry |
+| Web workflow | Internal V1 candidate | Submit and watch a run | Stage visibility only, thin shell |
+| Web results | Internal V1 candidate | Read structured outputs | Falls back to persisted history when live state is gone |
+| Web history list/detail | Internal V1 candidate | Revisit prior runs | Read-only single-user history |
+| CLI workflow | Internal V1 candidate | Operator-run workflow | Secondary surface |
+| CLI history list/detail | Internal V1 candidate | Operator revisit and diagnosis | Stronger text-based recovery guidance |
 
 ## Persistence Backends
 
 | Backend | Status | Default | Intended Usage | Notes |
 |---------|--------|---------|----------------|-------|
-| File | Internal-pilot ready | Yes | Default single-user workflows | Stable default path |
-| SQLite | Validated secondary backend when environment supports native binding | No | Local operator validation and secondary-backend confidence checks | Use `node scripts/validate-sqlite-backend.mjs`; skip is explicit when binding is unavailable |
-| PostgreSQL | Deferred | No | Out of current scope | Heavy DB productization intentionally deferred |
+| File | Internal-pilot ready | Yes | Default single-user workflows | Stable path for V1 |
+| SQLite | Validated secondary backend | No | Optional operator validation | Depends on native binding support |
+| PostgreSQL | Deferred | No | Out of V1 scope | Heavy DB productization intentionally deferred |
 
 ## Provider Modes
 
-| Provider Mode | Status | Default | Intended Usage | Notes |
-|---------------|--------|---------|----------------|-------|
-| Fake | Internal-pilot ready | Yes | CI, tests, local development | Deterministic and cost-free |
-| OpenAI | Opt-in internal-pilot | No | Real-provider validation and local single-user runs | Adapter-owned routing/policy summary available |
-| Anthropic | Opt-in internal-pilot | No | Real-provider validation and local single-user runs | Adapter-owned routing/policy summary available |
+| Mode | Status | Default | Intended Usage | Notes |
+|------|--------|---------|----------------|-------|
+| Fake | Internal-pilot ready | Yes | Tests, CI, local usage | Deterministic and cost-free |
+| OpenAI | Opt-in internal-pilot | No | Real-provider smoke and local validation | Adapter-owned routing and policy summary available |
+| Anthropic | Opt-in internal-pilot | No | Real-provider smoke and local validation | Adapter-owned routing and policy summary available |
 
-## Provider Routing and Reliability
-
-| Capability | Fake | OpenAI | Anthropic | Notes |
-|------------|------|--------|-----------|-------|
-| Capability-aware route selection | Yes | Yes | Yes | Adapter checks required capabilities before execution |
-| Deterministic default path | Yes | Yes | Yes | Primary route evaluated first |
-| Mismatch rejection | Yes | Yes | Yes | Clear selection failure when no route satisfies requirements |
-| Explicit fallback only | Yes | Yes | Yes | Fallback remains opt-in, not marketplace routing |
-| Conservative timeout policy | Yes | Yes | Yes | Effective timeout is clamped to policy limits |
-| Conservative retry policy | Yes | Yes | Yes | Effective retries are clamped to policy limits |
-| Failure stage visibility | Yes | Yes | Yes | Selection / primary / fallback stages exposed in summaries |
-| Usage summary | Estimated | Provider-dependent | Provider-dependent | Marked available / estimated / unavailable |
-| Cost summary | Minimal | Estimated or unavailable | Estimated or unavailable | Not billing-grade |
-
-## Validation Paths
-
-| Validation Path | Status | Blocking Default CI | Notes |
-|-----------------|--------|---------------------|-------|
-| Fake-provider tests | Ready | Yes | Default quality gate path |
-| Real-provider smoke | Opt-in operator-run | No | Use `node scripts/smoke-real-provider.mjs` |
-| SQLite validation | Opt-in operator-run | No | Use `node scripts/validate-sqlite-backend.mjs` |
-
-## CLI / Web Visibility
+## Provider Visibility
 
 | Surface | Provider/Model | Route/Policy | Retries/Timeouts | Fallback | Usage/Cost |
 |---------|----------------|--------------|------------------|----------|------------|
 | CLI workflow summary | Yes | Yes | Yes | Yes | Yes |
 | CLI history show | Yes | Yes | Yes | Yes | Yes |
-| Web results page | Yes | Yes | Yes | Yes | Yes |
+| Web results | Yes | Yes | Yes | Yes | Yes |
+| Web history detail | Yes | Minimal | Yes | Yes | Minimal |
 
-## Explicitly Not in Scope
+## Validation Paths
 
-- Provider marketplace
-- Dynamic provider discovery
-- Billing ledger
-- Budget control product
-- Dashboard analytics product
-- Multi-user provider governance
+| Validation Path | Status | Blocking Default CI | Notes |
+|-----------------|--------|---------------------|-------|
+| `pnpm run check:all` | Required | Yes | Main V1 gate |
+| Fake-provider package tests | Ready | Yes | Default verification path |
+| Real-provider smoke | Opt-in operator-run | No | Requires credentials and spends tokens |
+| SQLite validation | Opt-in operator-run | No | May skip with explicit native-binding reason |
+
+## Explicitly Out Of Scope
+
+- auth / RBAC
+- multi-user collaboration
+- workspace / tenant support
+- provider marketplace
+- billing system
+- dashboard analytics product
+- heavy DB platformization

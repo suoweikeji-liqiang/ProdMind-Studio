@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { runChallengeRound, buildChallengeSummary } from '@prodmind/challenge-engine';
-import { runDecisionOrchestration, createDecisionSession } from '@prodmind/decision-engine';
+import { runDecisionOrchestration, createDecisionSession, buildDecisionSummary } from '@prodmind/decision-engine';
 import { writeChallengeArtifact, createHistoryStore } from '@prodmind/asset-engine';
 import { createRuntimeAdapter } from '@prodmind/llm-adapter';
 import type { ChallengeSession, ChallengeToAssetHandoff, WorkflowRun, PhaseExecution, WorkflowResult, ProviderExecutionSummary } from '@prodmind/shared-types';
@@ -155,6 +155,7 @@ workflowRouter.post('/execute', async (req: Request, res: Response) => {
       setWorkflowStatus(workflowId, 'running_decision', 'Running decision analysis');
       const decisionSession = createDecisionSession(idea);
       const decisionResult = await runDecisionOrchestration(decisionSession, decisionAdapter);
+      const decisionSummary = buildDecisionSummary(decisionResult);
       collectProviderExecutions(decisionAdapter, providerExecutions);
       await updatePhase('decision', 'completed');
 
@@ -188,12 +189,10 @@ workflowRouter.post('/execute', async (req: Request, res: Response) => {
       run.providerExecutions = providerExecutions;
       await historyStore.updateRun(projectPath, run);
 
-      const decisionSummary = { recommendation: 'Completed' };
-
       const result: WorkflowResult = {
         runId: workflowId,
         challenge: { artifactPath: 'challenge.md', hypothesesCount: challengeSummary.hypotheses.length },
-        decision: { artifactPath: 'assets/decision.json', recommendation: decisionSummary.recommendation },
+        decision: { artifactPath: 'assets/decision.json', recommendation: decisionSummary.recommendation || 'Decision completed' },
         assets: { projectPath, files: ['challenge.md', 'assets/decision.json'] },
         providerExecutions,
       };
@@ -202,8 +201,8 @@ workflowRouter.post('/execute', async (req: Request, res: Response) => {
 
       setWorkflowResult(workflowId, {
         challenge: { round: challengeRound, summary: challengeSummary },
-        decision: decisionResult,
-        assets: { projectPath },
+        decision: { ...decisionResult, summary: decisionSummary },
+        assets: { projectPath, files: ['challenge.md', 'assets/decision.json'] },
         providerExecutions,
       });
     } catch (error) {
@@ -235,7 +234,11 @@ workflowRouter.get('/history', async (req: Request, res: Response) => {
   const projectPath = (req.query.projectPath as string) || './prodmind-project';
   const historyStore = createHistoryStore();
   const runs = await historyStore.listRuns(projectPath);
-  res.json({ runs });
+  const items = await Promise.all(runs.map(async (run) => ({
+    run,
+    result: await historyStore.getResult(projectPath, run.runId),
+  })));
+  res.json({ runs, items });
 });
 
 workflowRouter.get('/history/:runId', async (req: Request, res: Response) => {

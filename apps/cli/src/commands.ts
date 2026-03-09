@@ -5,7 +5,7 @@ import { createProjectStore, createHistoryStore } from '@prodmind/asset-engine';
 import { writeChallengeArtifact } from '@prodmind/asset-engine';
 import type { ChallengeInput } from '@prodmind/challenge-engine';
 import type { LLMAdapter } from '@prodmind/llm-adapter';
-import type { ChallengeToAssetHandoff, ChallengeArtifact, WorkflowRun, PhaseExecution, WorkflowResult, ProviderExecutionSummary } from '@prodmind/shared-types';
+import type { ChallengeToAssetHandoff, ChallengeArtifact, WorkflowRun, PhaseExecution, WorkflowResult, ProviderExecutionSummary, DecisionSummary } from '@prodmind/shared-types';
 import * as fs from 'fs';
 import * as path from 'path';
 import { detectCompletedPhases } from './recovery.js';
@@ -167,6 +167,14 @@ function buildExecutionSummary(execution: WorkflowExecution, artifacts: string[]
   };
 }
 
+function truncateForConsole(value: string | undefined, maxLength = 100): string {
+  if (!value) {
+    return 'n/a';
+  }
+
+  return value.length > maxLength ? `${value.slice(0, maxLength - 3)}...` : value;
+}
+
 export async function initProject(projectPath: string): Promise<void> {
   if (!fs.existsSync(projectPath)) {
     fs.mkdirSync(projectPath, { recursive: true });
@@ -257,7 +265,7 @@ export async function runDecision(
   challengeArtifact?: ChallengeArtifact,
   adapter: LLMAdapter = createDecisionAdapter(),
   providerExecutions?: ProviderExecutionSummary[]
-): Promise<void> {
+): Promise<DecisionSummary> {
 
   const enrichedProblem = challengeArtifact
     ? `${problem}\n\nContext from challenge:\n- Hypotheses: ${challengeArtifact.hypotheses.map(h => h.statement).join(', ')}\n- MVP: ${challengeArtifact.mvpBoundary}`
@@ -282,6 +290,8 @@ export async function runDecision(
 
   console.log('Decision completed');
   console.log(`Recommendation: ${summary.recommendation.substring(0, 100)}...`);
+
+  return summary;
 }
 
 export async function exportAssets(projectPath: string, outputPath: string): Promise<void> {
@@ -313,15 +323,28 @@ export async function listHistory(projectPath: string): Promise<void> {
 
   console.log(`\nWorkflow History (${runs.length} runs):\n`);
   for (const run of runs) {
+    const result = await historyStore.getResult(projectPath, run.runId);
     const duration = run.completedAt
       ? `${Math.round((new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime()) / 1000)}s`
       : 'running';
     const statusIcon = run.status === 'completed' ? '✓' : run.status === 'failed' ? '✗' : '⋯';
-    console.log(`${statusIcon} ${run.runId}`);
+    console.log(`${run.status === 'completed' ? '[done]' : run.status === 'failed' ? '[fail]' : '[run]'} ${run.runId}`);
     console.log(`  Idea: ${run.idea.substring(0, 60)}${run.idea.length > 60 ? '...' : ''}`);
     console.log(`  Status: ${run.status} | Duration: ${duration}`);
+    if (result?.decision?.recommendation) {
+      console.log(`  Recommendation: ${truncateForConsole(result.decision.recommendation, 90)}`);
+    }
+    if (result?.assets?.files?.length) {
+      console.log(`  Artifacts: ${result.assets.files.length} file(s)`);
+    }
+    if (run.providerExecutions?.[0]) {
+      const provider = run.providerExecutions[0];
+      console.log(`  Provider: ${provider.selectedProvider}/${provider.selectedModel}`);
+    }
     console.log('');
   }
+
+  console.log(`Revisit a run: prodmind-studio history show <runId> ${projectPath}`);
 }
 
 export async function showHistory(projectPath: string, runId: string): Promise<void> {
@@ -344,7 +367,7 @@ export async function showHistory(projectPath: string, runId: string): Promise<v
   for (const phase of run.phases) {
     const statusIcon = phase.status === 'completed' ? '✓' : phase.status === 'failed' ? '✗' : phase.status === 'running' ? '⋯' : '○';
     const duration = phase.durationMs ? `${Math.round(phase.durationMs / 1000)}s` : '-';
-    console.log(`  ${statusIcon} ${phase.phase}: ${phase.status} (${duration})`);
+    console.log(`  ${phase.status === 'completed' ? '[done]' : phase.status === 'failed' ? '[fail]' : phase.status === 'running' ? '[run]' : '[wait]'} ${phase.phase}: ${phase.status} (${duration})`);
     if (phase.error) console.log(`    Error: ${phase.error}`);
   }
 
@@ -354,6 +377,11 @@ export async function showHistory(projectPath: string, runId: string): Promise<v
 
   const result = await historyStore.getResult(projectPath, runId);
   if (result) {
+    console.log('\nResult Summary:');
+    if (result.challenge) console.log(`  Challenge hypotheses: ${result.challenge.hypothesesCount}`);
+    if (result.decision) console.log(`  Recommendation: ${truncateForConsole(result.decision.recommendation, 140)}`);
+    if (result.assets?.projectPath) console.log(`  Project path: ${result.assets.projectPath}`);
+
     console.log('\nArtifacts:');
     if (result.challenge) console.log(`  - Challenge: ${result.challenge.artifactPath} (${result.challenge.hypothesesCount} hypotheses)`);
     if (result.decision) console.log(`  - Decision: ${result.decision.artifactPath}`);
@@ -361,6 +389,17 @@ export async function showHistory(projectPath: string, runId: string): Promise<v
     if (!run.providerExecutions?.length && result.providerExecutions?.length) {
       displayProviderExecutions(result.providerExecutions);
     }
+  }
+
+  console.log('\nNext steps:');
+  if (run.status === 'failed') {
+    console.log('  - Inspect the failed phase and provider summary above.');
+    console.log('  - Fix the issue, then rerun the workflow.');
+    console.log('  - Use the real-provider smoke only when debugging provider behavior.');
+  } else {
+    console.log('  - Review the recommendation and reopen artifacts if needed.');
+    console.log('  - Use this run as the baseline before starting another workflow.');
+    console.log('  - Rerun only if you need a fresh pass on the idea.');
   }
 }
 
@@ -373,6 +412,7 @@ export async function runWorkflow(idea: string, projectPath: string): Promise<Ex
   let current = execution;
   const historyStore = createHistoryStore();
   const providerExecutions: ProviderExecutionSummary[] = [];
+  let decisionSummary: DecisionSummary | undefined;
 
   const run: WorkflowRun = {
     runId: execution.executionId,
@@ -448,7 +488,7 @@ export async function runWorkflow(idea: string, projectPath: string): Promise<Ex
     } else {
       await updatePhase('decision', 'running');
       current = updateStep(current, 'decision', 'running');
-      await runDecision(idea, projectPath, challengeArtifact, createDecisionAdapter(), providerExecutions);
+      decisionSummary = await runDecision(idea, projectPath, challengeArtifact, createDecisionAdapter(), providerExecutions);
       await updatePhase('decision', 'completed');
       current = updateStep(current, 'decision', 'completed');
     }
@@ -474,7 +514,7 @@ export async function runWorkflow(idea: string, projectPath: string): Promise<Ex
     const result: WorkflowResult = {
       runId: run.runId,
       challenge: { artifactPath: 'challenge.md', hypothesesCount: challengeArtifact.hypotheses.length },
-      decision: { artifactPath: 'assets/decision.json', recommendation: 'Decision completed' },
+      decision: { artifactPath: 'assets/decision.json', recommendation: decisionSummary?.recommendation || 'Decision completed' },
       assets: { projectPath, files: artifacts },
       providerExecutions,
     };
@@ -506,7 +546,12 @@ export async function runWorkflow(idea: string, projectPath: string): Promise<Ex
     const failedPhase = run.phases.find(p => p.status === 'running');
     if (failedPhase) {
       await updatePhase(failedPhase.phase, 'failed', run.error);
-      displayFailureSummary(run.runId, failedPhase.phase, run.error);
+      displayFailureSummary(
+        run.runId,
+        failedPhase.phase,
+        run.error,
+        run.phases.filter((phase) => phase.status === 'completed').map((phase) => phase.phase)
+      );
     }
 
     await historyStore.updateRun(projectPath, run);
