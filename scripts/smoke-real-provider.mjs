@@ -1,23 +1,25 @@
 #!/usr/bin/env node
 
 /**
- * Phase 5C real-provider smoke validation.
+ * Phase 5D Real Provider Smoke Validation.
+ *
+ * This script is operator-run and non-CI-blocking.
  *
  * Base validation:
  * - metadata / capability surface
  * - streamText path
- * - generateStructured path
+ * - structured output path
  * - usage / cost visibility surface
  *
  * Optional policy validation (SMOKE_VALIDATE_POLICY=1):
- * - forced timeout behavior
- * - retry exhaustion behavior
- * - fallback attempt visibility when fallback is configured
+ * - retry / timeout behavior
+ * - fallback behavior when explicitly configured
+ * - usage/cost visibility under policy stress
  *
  * Examples:
  *   OPENAI_API_KEY=xxx node scripts/smoke-real-provider.mjs
- *   ANTHROPIC_API_KEY=xxx PROVIDER=anthropic node scripts/smoke-real-provider.mjs
- *   OPENAI_API_KEY=xxx SMOKE_VALIDATE_POLICY=1 node scripts/smoke-real-provider.mjs
+  *   ANTHROPIC_API_KEY=xxx PROVIDER=anthropic node scripts/smoke-real-provider.mjs
+  *   OPENAI_API_KEY=xxx SMOKE_VALIDATE_POLICY=1 node scripts/smoke-real-provider.mjs
  */
 
 import { z } from 'zod';
@@ -81,11 +83,20 @@ function printSummary(summary) {
     return;
   }
 
+  const resolvedRoute = summary.routeResolution?.resolvedCandidate?.routeRole;
+  const initialRoute = summary.routeResolution?.initialCandidate.routeRole;
+  const routeLabel = initialRoute && resolvedRoute
+    ? (initialRoute === resolvedRoute ? resolvedRoute : `${initialRoute} -> ${resolvedRoute}`)
+    : (summary.fallbackUsed ? 'primary -> fallback' : 'primary');
+
   console.log(`  Provider/model: ${summary.selectedProvider}/${summary.selectedModel}`);
   console.log(`  Attempts: ${summary.attempts} | Retries: ${summary.retriesPerformed} | Timeouts: ${summary.timeoutCount}`);
+  console.log(`  Route: ${routeLabel}`);
+  console.log(`  Policy: ${summary.policySnapshot ? `timeout=${summary.policySnapshot.timeoutMs}ms | maxRetries=${summary.policySnapshot.maxRetries} | fallbackMode=${summary.policySnapshot.fallbackMode}` : 'unavailable'}`);
   console.log(`  Fallback: ${summary.fallbackUsed ? `yes (${summary.initialProvider}/${summary.initialModel} -> ${summary.selectedProvider}/${summary.selectedModel})` : 'no'}`);
   console.log(`  Usage: requests=${summary.usage.requestCount}, tokens=${summary.usage.totalTokens ?? 'unavailable'} (${summary.usage.tokenAvailability})`);
   console.log(`  Cost: ${summary.usage.actualCostUsd ?? summary.usage.estimatedCostUsd ?? 'unavailable'} (${summary.usage.costAvailability})`);
+  console.log(`  Failure Stage: ${summary.failureStage ?? 'none'}`);
   if (summary.failureType) {
     console.log(`  Failure: ${summary.failureType} - ${summary.failureMessage ?? 'n/a'}`);
   }
@@ -166,11 +177,18 @@ async function runPolicyValidation(config) {
 async function main() {
   const config = loadConfigFromEnv();
 
-  console.log('\nPhase 5C Real Provider Smoke Validation');
+  console.log('\nPhase 5D Real Provider Smoke Validation');
+  console.log('Mode: operator-run / non-CI-blocking');
   console.log(`Provider: ${config.provider}`);
   console.log(`Model: ${config.modelId}`);
   console.log(`Timeout/Retry: ${config.timeoutMs}ms / ${config.maxRetries}`);
   console.log(`Fallback: ${config.fallback ? `${config.fallback.provider}/${config.fallback.modelId}` : 'not configured'}`);
+  console.log('');
+  console.log('Expected validation coverage:');
+  console.log('- structured output path');
+  console.log('- retry / timeout behavior');
+  console.log('- fallback behavior when explicitly configured');
+  console.log('- usage/cost visibility');
   console.log('');
   console.log('Cost expectations:');
   console.log('- Base validation performs 2 real calls.');

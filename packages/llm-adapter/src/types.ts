@@ -1,6 +1,7 @@
 import type { z } from 'zod';
 import type {
   CorrelationContext,
+  ProviderFallbackMode,
   ProviderCapabilityProfile,
   ProviderExecutionSummary,
   ProviderSelectionRequirement,
@@ -68,7 +69,10 @@ export interface LLMConfig {
   modelId: string;
   baseURL?: string;
   timeoutMs?: number;
+  maxTimeoutMs?: number;
   maxRetries?: number;
+  maxRetriesLimit?: number;
+  fallbackMode?: ProviderFallbackMode;
   pricing?: LLMPricingConfig;
   fallback?: Omit<LLMConfig, 'fallback'>;
 }

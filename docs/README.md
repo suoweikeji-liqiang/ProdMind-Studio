@@ -62,6 +62,13 @@ Documentation is grouped for fast engineering execution.
 - [phase5c-smoke-validation.md](phase5c-smoke-validation.md) - Real-provider smoke validation flow
 - [phase5c-deferred.md](phase5c-deferred.md) - Deferred items before Phase 5D
 
+## Policy Tuning and Validation (Phase 5D)
+- [phase5d-routing-policy.md](phase5d-routing-policy.md) - Adapter-owned deterministic routing policy
+- [phase5d-reliability-policy.md](phase5d-reliability-policy.md) - Conservative retry/timeout/fallback defaults
+- [phase5d-smoke-ops.md](phase5d-smoke-ops.md) - Operator-run real-provider smoke workflow
+- [phase5d-budget-assessment.md](phase5d-budget-assessment.md) - Budget guardrails assessment and defer decision
+- [phase5d-deferred.md](phase5d-deferred.md) - Deferred items before the next phase
+
 ## Execution
 - [ci-plan.md](ci-plan.md)
 - [runbook.md](runbook.md) - Practical operator guide for running the system

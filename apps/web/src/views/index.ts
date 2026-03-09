@@ -178,8 +178,21 @@ export const renderResults = (id: string) => layout('Results', `
         '<div class="result-section">' +
           '<h3>' + (e.operation || 'provider_call') + '</h3>' +
           '<p><strong>Provider:</strong> ' + e.selectedProvider + '/' + e.selectedModel + '</p>' +
+          '<p><strong>Route:</strong> ' + (
+            e.routeResolution?.resolvedCandidate?.routeRole
+              ? (e.routeResolution.initialCandidate.routeRole === e.routeResolution.resolvedCandidate.routeRole
+                  ? e.routeResolution.resolvedCandidate.routeRole
+                  : e.routeResolution.initialCandidate.routeRole + ' -> ' + e.routeResolution.resolvedCandidate.routeRole)
+              : (e.fallbackUsed ? 'primary -> fallback' : 'primary')
+          ) + '</p>' +
+          '<p><strong>Policy:</strong> ' + (
+            e.policySnapshot
+              ? 'timeout=' + e.policySnapshot.timeoutMs + 'ms | maxRetries=' + e.policySnapshot.maxRetries + ' | fallbackMode=' + e.policySnapshot.fallbackMode
+              : 'unavailable'
+          ) + '</p>' +
           '<p><strong>Retries:</strong> ' + e.retriesPerformed + ' | <strong>Timeouts:</strong> ' + e.timeoutCount + '</p>' +
           '<p><strong>Fallback:</strong> ' + (e.fallbackUsed ? 'Yes' : 'No') + '</p>' +
+          '<p><strong>Failure Stage:</strong> ' + (e.failureStage || 'none') + '</p>' +
           '<p><strong>Usage:</strong> ' + (e.usage?.totalTokens ?? 'unavailable') + ' tokens (' + (e.usage?.tokenAvailability ?? 'unavailable') + ')</p>' +
           '<p><strong>Cost:</strong> ' + (e.usage?.actualCostUsd ?? e.usage?.estimatedCostUsd ?? 'unavailable') + ' (' + (e.usage?.costAvailability ?? 'unavailable') + ')</p>' +
         '</div>'

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createRequire } from 'node:module';
 import { createHistoryStore } from '../history-store.js';
 import { createSqliteRepository } from './sqlite-repository.js';
+import { validateSqliteRoundTrip } from '../sqlite-validation.js';
 import type { WorkflowRun, WorkflowResult } from '@prodmind/shared-types';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -162,5 +163,24 @@ describe('HistoryStore - Backend Integration', () => {
       expect(runs).toHaveLength(1);
       expect(runs[0]!.runId).toBe(testRun.runId);
     });
+  });
+
+  it('produces an environment-backed sqlite validation result', async () => {
+    const validation = await validateSqliteRoundTrip({
+      dbPath: path.join(testDir, 'validation.db'),
+      run: testRun,
+      result: testResult,
+    });
+
+    expect(typeof validation.available).toBe('boolean');
+
+    if (validation.available) {
+      expect(validation.validated).toBe(true);
+      expect(validation.retrievedRun?.providerExecutions?.[0]?.selectedProvider).toBe('fake');
+      expect(validation.retrievedResult?.providerExecutions?.[0]?.usage.totalTokens).toBe(21);
+    } else {
+      expect(validation.validated).toBe(false);
+      expect(validation.reason).toBeTruthy();
+    }
   });
 });

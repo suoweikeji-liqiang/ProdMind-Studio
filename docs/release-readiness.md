@@ -2,73 +2,53 @@
 
 ## Assessment Date: 2026-03-09
 
-## Stage: Phase 5C Complete
+## Stage: Phase 5D Complete
 
 ## Checklist
 
-### Core Functionality
-- [x] Workflow main path operational (idea -> challenge -> decision -> assets)
-- [x] CLI can execute full workflow
-- [x] Web can execute full workflow
-- [x] Challenge engine produces artifacts
-- [x] Decision engine produces artifacts
-- [x] Asset engine writes files correctly
+### Core Workflow
+- [x] Workflow main path operational
+- [x] CLI workflow path operational
+- [x] Web workflow path operational
+- [x] Challenge, decision, and asset outputs still produced
 
-### Persistence & Recovery
-- [x] File backend operational (default)
-- [x] SQLite backend remains implemented behind the abstraction
-- [x] Workflow history persists to disk
-- [x] History can be listed and retrieved
-- [x] Phase skip detection works
-- [x] Workflow-level manual recovery remains available
+### Provider Policy Maturity
+- [x] Adapter-owned routing refined beyond simple explicit fallback
+- [x] Capability-aware mismatch rejection retained
+- [x] Deterministic default route implemented
+- [x] Conservative timeout and retry defaults enforced
+- [x] Request overrides clamped to policy limits
+- [x] Fallback remains explicit-only
+- [x] Route / policy / failure-stage summaries exposed
 
-### Provider Maturity (Phase 5C)
-- [x] Provider capability / reliability contracts defined
-- [x] Capability-aware mismatch handling implemented
-- [x] Fake provider operational (default, CI-safe)
-- [x] Real provider workflow available (opt-in)
-- [x] Bounded timeout and retry implemented in `llm-adapter`
-- [x] Explicit fallback path implemented
-- [x] Provider execution summaries persisted
-- [x] Minimal usage / cost visibility exposed
-- [x] CLI displays provider reliability summary
-- [x] Web displays minimal provider reliability summary
-- [x] Enhanced real-provider smoke workflow documented
+### Validation Paths
+- [x] Fake-provider validation remains default and CI-safe
+- [x] Real-provider smoke remains opt-in and non-CI-blocking
+- [x] SQLite validation path exists for supported environments
+- [x] SQLite skip reasons are explicit when native binding is unavailable
+
+### Visibility
+- [x] CLI shows provider/model, retries, fallback, timeout/failure summary, usage/cost
+- [x] Web shows minimal provider reliability summary
+- [x] Provider execution summaries persist through history/result paths
 
 ### Quality Gates
-- [x] docs-check passes
-- [x] boundary-check passes
-- [x] forbidden-deps-check passes
-- [x] lint passes
-- [x] typecheck passes
-- [x] test passes
-- [x] build passes
+- [x] `pnpm run check:all`
 
-### Environment-specific Notes
-- [ ] SQLite runtime validation in this environment (native binding unavailable here)
-- [ ] Real provider smoke run in this environment (opt-in, non-blocking)
+### Environment Notes
+- [ ] Real-provider smoke executed in this environment
+- [x] SQLite validation executed in this environment (skipped with explicit native-binding reason)
 
 ## Known Limitations
 
-### Architecture
+- Internal pilot ready only
 - Single-user execution only
-- File-based persistence default
-- No concurrent workflow support
-- No distributed execution
-
-### Provider Scope
-- Real provider mode remains opt-in
-- Fallback is explicit only
-- Routing is capability-aware but still minimal
+- File backend remains the stable default
+- SQLite is secondary-backend validation, not default persistence
+- Real-provider execution remains opt-in
 - Usage/cost visibility is minimal, not billing-grade
-- No provider marketplace
-- No dynamic provider discovery
-
-### Product Scope
-- No authentication or authorization
-- No multi-user collaboration
-- No dashboard analytics product
-- No heavy DB productization
+- Budget guardrails are deferred pending stronger pilot evidence
+- No auth, multi-user support, marketplace, billing system, or heavy DB platformization
 
 ## Readiness Assessment
 
@@ -77,38 +57,28 @@
 Rationale:
 
 - Core workflow remains stable
-- Provider variability is handled more safely than Phase 5B
-- Provider selection failures are clearer
-- Operators can see provider/model, retries, timeout/fallback, and usage summary
-- Real-provider validation path is stronger while staying opt-in
+- Provider routing is clearer and still adapter-owned
+- Reliability defaults are more conservative than Phase 5C
+- Operator validation paths are stronger without becoming CI blockers
+- CLI/Web visibility is sufficient for current pilot maturity
 
 ### Broader Rollout: NOT READY
 
-Blocking issues:
+Reasons:
 
 1. No auth or multi-user support
-2. Persistence is still file-default and pilot-oriented
-3. Provider routing is still minimal
-4. Usage/cost visibility is not billing-grade
-5. No operational dashboard or production deployment layer
+2. Persistence remains pilot-oriented
+3. Cost visibility is not billing-grade
+4. Real-provider operations still rely on manual operator validation
+5. No broader platform hardening has been added
 
-## Recommended Next Steps
+## Budget Guardrails
 
-### Before Internal Pilot Usage
-1. Run `pnpm run check:all`
-2. Run one fake-provider workflow in CLI
-3. Run one fake-provider workflow in Web
-4. Review `docs/runbook.md`
-5. Optionally run `node scripts/smoke-real-provider.mjs`
+Decision: deferred in Phase 5D.
 
-### Candidate Phase 5D Themes
-1. Smarter provider routing beyond explicit fallback
-2. Reliability policy tuning based on real smoke findings
-3. Budget guardrails only if actually needed
-4. Stronger SQLite / next-backend validation in environments with native support
+Why:
 
-## Sign-Off
+- Current pilot evidence does not justify building guardrails yet.
+- The immediate gap was reliability clarity, not spend control.
 
-**Phase 5C Status:** COMPLETE
-**Internal Pilot Ready:** YES
-**Broader Rollout Ready:** NO
+See [phase5d-budget-assessment.md](phase5d-budget-assessment.md).

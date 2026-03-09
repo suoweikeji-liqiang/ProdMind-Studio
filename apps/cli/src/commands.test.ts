@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { runWorkflow, initProject, runChallenge, runDecision, exportAssets } from '../src/commands.js';
+import { displayProviderExecutions } from '../src/observability.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -66,5 +67,65 @@ describe('CLI E2E Golden Path', () => {
 
     expect(fs.existsSync(path.join(outputPath, 'challenge.md'))).toBe(true);
     expect(fs.existsSync(path.join(outputPath, 'decision.json'))).toBe(true);
+  });
+
+  it('should display the provider policy summary from execution contracts', () => {
+    const lines: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => {
+      lines.push(args.join(' '));
+    };
+
+    try {
+      displayProviderExecutions([{
+        operation: 'streamText',
+        initialProvider: 'openai',
+        initialModel: 'gpt-4o-mini',
+        selectedProvider: 'anthropic',
+        selectedModel: 'claude-3-5-haiku-20241022',
+        attempts: 2,
+        retriesPerformed: 1,
+        timeoutCount: 1,
+        fallbackUsed: true,
+        failureStage: 'fallback',
+        routeResolution: {
+          strategy: 'explicit-fallback',
+          initialCandidate: {
+            providerName: 'openai',
+            modelName: 'gpt-4o-mini',
+            routeRole: 'primary',
+            enabled: true,
+            fallbackEligible: true,
+          },
+          resolvedCandidate: {
+            providerName: 'anthropic',
+            modelName: 'claude-3-5-haiku-20241022',
+            routeRole: 'fallback',
+            enabled: true,
+            fallbackEligible: false,
+          },
+        },
+        policySnapshot: {
+          timeoutMs: 5000,
+          maxRetries: 1,
+          fallbackMode: 'explicit',
+        },
+        usage: {
+          requestCount: 2,
+          totalTokens: 120,
+          tokenAvailability: 'estimated',
+          costAvailability: 'estimated',
+          estimatedCostUsd: 0.0012,
+        },
+      }]);
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(lines.join('\n')).toContain('Route:');
+    expect(lines.join('\n')).toContain('fallback');
+    expect(lines.join('\n')).toContain('Policy:');
+    expect(lines.join('\n')).toContain('5000ms');
+    expect(lines.join('\n')).toContain('Failure Stage:');
   });
 });

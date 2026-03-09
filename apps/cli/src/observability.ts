@@ -23,6 +23,25 @@ function formatUsd(value: number | undefined): string {
   return `$${value.toFixed(6)}`;
 }
 
+function formatRoute(execution: ProviderExecutionSummary): string {
+  const initialRole = execution.routeResolution?.initialCandidate.routeRole;
+  const resolvedRole = execution.routeResolution?.resolvedCandidate?.routeRole;
+
+  if (initialRole && resolvedRole) {
+    return initialRole === resolvedRole ? initialRole : `${initialRole} -> ${resolvedRole}`;
+  }
+
+  return execution.fallbackUsed ? 'primary -> fallback' : 'primary';
+}
+
+function formatPolicy(execution: ProviderExecutionSummary): string {
+  if (!execution.policySnapshot) {
+    return 'unavailable';
+  }
+
+  return `timeout=${execution.policySnapshot.timeoutMs}ms | maxRetries=${execution.policySnapshot.maxRetries} | fallbackMode=${execution.policySnapshot.fallbackMode}`;
+}
+
 export function displayProviderExecutions(executions: ProviderExecutionSummary[]): void {
   if (executions.length === 0) {
     return;
@@ -32,9 +51,12 @@ export function displayProviderExecutions(executions: ProviderExecutionSummary[]
   for (const execution of executions) {
     console.log(`- ${execution.operation ?? 'provider_call'}: ${execution.selectedProvider}/${execution.selectedModel}`);
     console.log(`  Attempts: ${execution.attempts} | Retries: ${execution.retriesPerformed} | Timeouts: ${execution.timeoutCount}`);
+    console.log(`  Route: ${formatRoute(execution)}`);
+    console.log(`  Policy: ${formatPolicy(execution)}`);
     console.log(`  Fallback: ${execution.fallbackUsed ? `yes (${execution.initialProvider}/${execution.initialModel} -> ${execution.selectedProvider}/${execution.selectedModel})` : 'no'}`);
     console.log(`  Usage: requests=${execution.usage.requestCount}, tokens=${execution.usage.totalTokens ?? 'unavailable'} (${execution.usage.tokenAvailability})`);
     console.log(`  Cost: ${formatUsd(execution.usage.actualCostUsd ?? execution.usage.estimatedCostUsd)} (${execution.usage.costAvailability})`);
+    console.log(`  Failure Stage: ${execution.failureStage ?? 'none'}`);
     if (execution.failureType) {
       console.log(`  Failure: ${execution.failureType} - ${execution.failureMessage ?? 'n/a'}`);
     }

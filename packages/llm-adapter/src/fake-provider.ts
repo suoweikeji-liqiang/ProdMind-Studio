@@ -24,6 +24,13 @@ export interface FakeProviderOptions {
 }
 
 function defaultProfile(options: FakeProviderOptions = {}): ProviderCapabilityProfile {
+  const fallbackMode = options.reliability?.fallbackMode
+    ?? (options.fallback ? 'explicit' : 'disabled');
+  const defaultTimeoutMs = options.reliability?.defaultTimeoutMs ?? 100;
+  const maxTimeoutMs = options.reliability?.maxTimeoutMs ?? defaultTimeoutMs;
+  const defaultMaxRetries = options.reliability?.defaultMaxRetries ?? 1;
+  const maxRetriesLimit = options.reliability?.maxRetriesLimit ?? defaultMaxRetries;
+
   return {
     providerName: options.providerName ?? 'fake',
     modelName: options.modelName ?? 'fake-default',
@@ -33,9 +40,12 @@ function defaultProfile(options: FakeProviderOptions = {}): ProviderCapabilityPr
       streaming: options.capabilities?.streaming ?? true,
     },
     reliability: {
-      timeoutMs: options.reliability?.timeoutMs ?? 100,
-      maxRetries: options.reliability?.maxRetries ?? 1,
-      fallbackEligible: options.reliability?.fallbackEligible ?? Boolean(options.fallback),
+      defaultTimeoutMs,
+      maxTimeoutMs,
+      defaultMaxRetries,
+      maxRetriesLimit,
+      fallbackEligible: options.reliability?.fallbackEligible ?? fallbackMode === 'explicit',
+      fallbackMode,
       fallbackProvider: options.reliability?.fallbackProvider,
       fallbackModel: options.reliability?.fallbackModel,
     },
