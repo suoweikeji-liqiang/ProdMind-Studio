@@ -30,7 +30,7 @@ This repo is intentionally migration-first:
 - Failure diagnosis workflow
 - Metrics collection and display
 
-See [docs/phase5b-completion-report.md](docs/phase5b-completion-report.md) for details.
+See [docs/phase5b-completion-report.md](docs/phase5b-completion-report.md) for details, and [docs/README.md#observability-enhancement-phase-5b](docs/README.md#observability-enhancement-phase-5b) for the full 5B doc index.
 
 ## Phase 5A: Enhanced Foundations
 

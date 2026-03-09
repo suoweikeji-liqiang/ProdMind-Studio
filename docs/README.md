@@ -48,8 +48,15 @@ Documentation is grouped for fast engineering execution.
 - [configuration.md](configuration.md) - Backend/provider configuration
 - [phase5a-deferred.md](phase5a-deferred.md) - Deferred items for Phase 5B
 
+## Observability Enhancement (Phase 5B)
+- [phase5b-completion-report.md](phase5b-completion-report.md) - Phase 5B summary
+- [phase5b-observability-boundary.md](phase5b-observability-boundary.md) - Structured event and boundary rules
+- [phase5b-failure-diagnosis.md](phase5b-failure-diagnosis.md) - Error classification and diagnosis flow
+- [phase5b-metrics.md](phase5b-metrics.md) - Metrics model and reporting surface
+- [observability-standards.md](observability-standards.md) - Cross-phase observability standards
+- [phase5b-deferred.md](phase5b-deferred.md) - Deferred items for Phase 5C
+
 ## Execution
 - [ci-plan.md](ci-plan.md)
 - [runbook.md](runbook.md) - Practical operator guide for running the system
 - [release-readiness.md](release-readiness.md) - Current stage readiness assessment
-
