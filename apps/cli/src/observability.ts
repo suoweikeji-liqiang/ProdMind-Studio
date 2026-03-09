@@ -83,13 +83,19 @@ export function displayWorkflowSummary(
     }
   }
 
+  console.log(`History: prodmind-studio history show ${runId}`);
+
   displayProviderExecutions(executions);
 }
 
-export function displayFailureSummary(runId: string, phase: string, error: string): void {
+export function displayFailureSummary(runId: string, phase: string, error: string, completedPhases: string[] = []): void {
   console.log('\n--- Failure Details ---');
   console.log(`Run ID: ${runId}`);
   console.log(`Failed Phase: ${phase}`);
   console.log(`Error: ${error}`);
-  console.log('\nUse "prodmind-studio history show <runId>" for full details');
+  console.log(`System already completed: ${completedPhases.length ? completedPhases.join(', ') : 'none'}`);
+  console.log('\nNext steps:');
+  console.log(`  - Inspect persisted details: prodmind-studio history show ${runId}`);
+  console.log('  - Fix the issue, then rerun the workflow.');
+  console.log('  - Use real-provider smoke only when debugging provider behavior.');
 }

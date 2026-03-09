@@ -1,6 +1,6 @@
 import express from 'express';
 import { workflowRouter } from './routes/workflow.js';
-import { renderHome, renderWorkflow, renderResults } from './views/index.js';
+import { renderHome, renderWorkflow, renderResults, renderHistoryListPage, renderHistoryDetailPage } from './views/index.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -12,6 +12,8 @@ app.use(express.urlencoded({ extended: true }));
 app.get('/', (req, res) => res.send(renderHome()));
 app.get('/workflow', (req, res) => res.send(renderWorkflow()));
 app.get('/results/:id', (req, res) => res.send(renderResults(req.params.id)));
+app.get('/history', (req, res) => res.send(renderHistoryListPage()));
+app.get('/history/:runId', (req, res) => res.send(renderHistoryDetailPage(req.params.runId)));
 
 // API
 app.use('/api/workflow', workflowRouter);

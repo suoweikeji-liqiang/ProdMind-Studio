@@ -1,5 +1,22 @@
 # Migration Plan (Layered Refactor, Not Code Dump)
 
+## Current Status
+
+Migration phases through Phase 5D are complete enough to support the V1 sprint closeout.
+
+Current product framing:
+
+- single-user decision workbench
+- Web-first usage
+- CLI as operator assist
+- internal-pilot scope only
+
+Current release docs:
+
+- [v1-boundary.md](v1-boundary.md)
+- [v1-release-checklist.md](v1-release-checklist.md)
+- [release-readiness.md](release-readiness.md)
+
 ## Total Principles
 - Do not copy old repos wholesale.
 - Extract kernel first, shell later.
@@ -330,4 +347,3 @@ From `prodmind-v2`:
 - `requirement-co-builder/src/output/compile.ts`
 - `requirement-co-builder/src/output/artifacts.ts`
 - `requirement-co-builder/src/adapters/llm.ts` (contract extraction only)
-

@@ -1,126 +1,110 @@
 # ProdMind-Studio
 
-Unified repository for a layered product system:
-- challenge and adversarial idea stress testing
-- decision state orchestration
-- structured requirement asset accumulation
+ProdMind-Studio is now being closed into a V1 single-user decision workbench.
 
-**Current Stage:** Phase 5B complete - structured observability foundation
+The intended operator path is:
 
-This repo is intentionally migration-first:
-- no large code copy from source repos
-- engine boundaries before shell implementation
-- standards and quality gates before feature volume
+`idea input -> challenge -> decision -> asset output -> history revisit -> basic recovery`
 
-## Phase 5B: Structured Observability
+Current maturity: internal-pilot ready for single-user usage.
 
-**Observability Contract:**
-- Structured events (workflow, provider, persistence, recovery)
-- Correlation context propagation (runId, phaseId, stepId)
-- Normalized error diagnosis with retryable signals
-- Minimal metrics surface (in-memory aggregation)
+## What V1 Includes
 
-**CLI Visibility:**
-- Workflow summary with run ID, status, duration
-- Provider usage statistics
-- Failure diagnosis with error codes
+- Web as the primary entry point
+- CLI as a secondary operator surface
+- Fake provider as the default safe path
+- Opt-in real-provider validation path
+- Persisted history and result revisit
+- Provider reliability and usage summary visibility
 
-**Documentation:**
-- Observability standards and operator guide
-- Failure diagnosis workflow
-- Metrics collection and display
+## What V1 Does Not Include
 
-See [docs/phase5b-completion-report.md](docs/phase5b-completion-report.md) for details, and [docs/README.md#observability-enhancement-phase-5b](docs/README.md#observability-enhancement-phase-5b) for the full 5B doc index.
+- auth / RBAC
+- multi-user collaboration
+- workspaces / tenants
+- provider marketplace
+- billing system
+- heavy dashboard platform
+- mobile app
+- heavy DB productization
 
-## Phase 5A: Enhanced Foundations
+See [docs/v1-boundary.md](docs/v1-boundary.md) for the explicit release boundary.
 
-**Persistence:**
-- Abstraction boundary defined (`PersistenceRepository` interface)
-- File backend (default, production-ready)
-- SQLite backend (validation, requires native compilation)
+## Recommended Start
 
-**Provider Integration:**
-- Formalized provider boundary with error normalization
-- Opt-in real provider smoke workflow
-- Minimal observability hooks
+1. Install dependencies:
 
-**Configuration:**
-- Environment-based backend/provider selection
-- Safe defaults (file backend, fake provider)
-
-See [docs/phase5a-completion-report.md](docs/phase5a-completion-report.md) for details.
-
-## System Status
-
-See [docs/system-maturity.md](docs/system-maturity.md) for current maturity assessment.
-
-**Ready for:** Local development, single-user exploration, internal pilot demonstrations
-**Not ready for:** Multi-user collaboration, production deployment at scale
-
-## Monorepo Layout
-- `apps/cli` - CLI shell (thin composition layer)
-- `apps/web` - Web shell (thin composition layer)
-- `packages/challenge-engine` - challenge protocol and conflict rules
-- `packages/decision-engine` - stateful decision orchestration
-- `packages/asset-engine` - project state and artifact generation
-- `packages/shared-types` - canonical cross-package contracts
-- `packages/llm-adapter` - provider abstraction boundary
-- `docs/` - architecture, standards, migration, execution docs
-- `scripts/` - repo checks and quality gate scripts
-- `tests/` - shared fixtures, golden outputs, fakes, helpers
-
-## Local Commands
-
-**Quality Gates:**
-- `pnpm run check:all` - Run all quality gates (recommended before commit)
-- `pnpm run lint` - Lint all packages
-- `pnpm run typecheck` - Type check all packages
-- `pnpm run test` - Run all tests
-- `pnpm run build` - Build all packages
-
-**Development:**
-- `pnpm run dev:cli` - Build and run CLI
-- `pnpm run dev:web` - Build and run Web server
-
-**Testing:**
-- `pnpm run test:smoke` - Run smoke tests with real provider (requires API key)
-- `pnpm run test:smoke-real` - Run real provider smoke test (OpenAI/Anthropic)
-
-**Phase 5A Commands:**
 ```bash
-# File backend (default)
-pnpm run dev:cli workflow "your idea"
-
-# SQLite backend (experimental)
-PERSISTENCE_BACKEND=sqlite pnpm run dev:cli workflow "your idea"
-
-# Real provider (opt-in, requires API key)
-PROVIDER_MODE=real OPENAI_API_KEY=sk-xxx pnpm run dev:cli workflow "your idea"
-
-# Real provider smoke test
-OPENAI_API_KEY=sk-xxx pnpm run test:smoke-real
+pnpm install
 ```
 
-See [docs/configuration.md](docs/configuration.md) and [docs/support-matrix.md](docs/support-matrix.md) for details.
+2. Run the full quality gate:
 
-**Individual Checks:**
-- `pnpm run check:docs` - Validate documentation
-- `pnpm run check:boundaries` - Validate module boundaries
-- `pnpm run check:forbidden-deps` - Check for forbidden dependencies
+```bash
+pnpm run check:all
+```
 
-See [docs/runbook.md](docs/runbook.md) for detailed operational guide.
+3. Start Web, the primary V1 entry:
 
-## Standards Entry
-See [docs/README.md](D:/work/product-unification/ProdMind-Studio/docs/README.md) for grouped navigation:
-- architecture and boundaries
-- UI/testing/quality standards
-- migration and phase plans
-- CI and execution guidance
+```bash
+cd apps/web
+pnpm run build
+node dist/server.js
+```
 
-Direct links:
-- [repo-analysis.md](D:/work/product-unification/ProdMind-Studio/docs/repo-analysis.md)
-- [module-boundary.md](D:/work/product-unification/ProdMind-Studio/docs/module-boundary.md)
-- [migration-plan.md](D:/work/product-unification/ProdMind-Studio/docs/migration-plan.md)
-- [ui-standards.md](D:/work/product-unification/ProdMind-Studio/docs/ui-standards.md)
-- [testing-standards.md](D:/work/product-unification/ProdMind-Studio/docs/testing-standards.md)
-- [quality-gates.md](D:/work/product-unification/ProdMind-Studio/docs/quality-gates.md)
+4. Optional CLI path:
+
+```bash
+cd apps/cli
+pnpm run build
+node dist/index.js workflow "your idea here"
+```
+
+## Provider Modes
+
+- Default: fake provider
+- Opt-in: real provider for local validation and smoke
+
+Examples:
+
+```bash
+# Default fake-provider path
+node apps/cli/dist/index.js workflow "your idea"
+
+# Real provider path
+PROVIDER_MODE=real OPENAI_API_KEY=sk-xxx MODEL_ID=gpt-4o-mini node apps/cli/dist/index.js workflow "your idea"
+
+# Real-provider smoke
+OPENAI_API_KEY=sk-xxx node scripts/smoke-real-provider.mjs
+```
+
+## Core Commands
+
+```bash
+pnpm run check:all
+pnpm run build
+pnpm run dev:web
+pnpm run dev:cli
+```
+
+Package-specific validation:
+
+```bash
+node scripts/test-package.mjs --scope apps/web --package @prodmind/app-web
+node scripts/test-package.mjs --scope apps/cli --package @prodmind/app-cli
+```
+
+## Docs
+
+- [docs/v1-boundary.md](docs/v1-boundary.md)
+- [docs/v1-release-checklist.md](docs/v1-release-checklist.md)
+- [docs/runbook.md](docs/runbook.md)
+- [docs/release-readiness.md](docs/release-readiness.md)
+- [docs/support-matrix.md](docs/support-matrix.md)
+- [docs/README.md](docs/README.md)
+- [docs/ui-standards.md](docs/ui-standards.md)
+- [docs/testing-standards.md](docs/testing-standards.md)
+- [docs/quality-gates.md](docs/quality-gates.md)
+- [docs/repo-analysis.md](docs/repo-analysis.md)
+- [docs/module-boundary.md](docs/module-boundary.md)
+- [docs/migration-plan.md](docs/migration-plan.md)
