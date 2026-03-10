@@ -17,10 +17,13 @@ const DECISION_FAKE_RESPONSE = [
 ].join('\n');
 
 function createChallengeAdapter() {
+  const config = loadProviderConfig();
+  const isFake = config.mode === 'fake';
+
   return createRuntimeAdapter(
-    loadProviderConfig(),
+    config,
     { default: CHALLENGE_FAKE_RESPONSE },
-    {
+    isFake ? {
       usage: {
         tokenAccounting: 'estimated',
         costAccounting: 'unavailable',
@@ -35,15 +38,18 @@ function createChallengeAdapter() {
           },
         },
       },
-    }
+    } : undefined
   );
 }
 
 function createDecisionAdapter() {
+  const config = loadProviderConfig();
+  const isFake = config.mode === 'fake';
+
   return createRuntimeAdapter(
-    loadProviderConfig(),
+    config,
     { default: DECISION_FAKE_RESPONSE },
-    {
+    isFake ? {
       usage: {
         tokenAccounting: 'estimated',
         costAccounting: 'unavailable',
@@ -58,7 +64,7 @@ function createDecisionAdapter() {
           },
         },
       },
-    }
+    } : undefined
   );
 }
 
@@ -139,14 +145,7 @@ workflowRouter.post('/execute', async (req: Request, res: Response) => {
         updatedAt: new Date().toISOString(),
       };
 
-      const challengeSummaryBase = buildChallengeSummary(session);
-      const challengeSummary = challengeSummaryBase.hypotheses.length > 0
-        ? challengeSummaryBase
-        : {
-            ...challengeSummaryBase,
-            hypotheses: ['Users need a faster validation loop'],
-            mvpBoundary: challengeSummaryBase.mvpBoundary || 'Internal pilot workflow with provider reliability visibility',
-          };
+      const challengeSummary = buildChallengeSummary(session);
       await updatePhase('challenge', 'completed');
 
       // Decision phase
@@ -191,8 +190,8 @@ workflowRouter.post('/execute', async (req: Request, res: Response) => {
 
       const result: WorkflowResult = {
         runId: workflowId,
-        challenge: { artifactPath: 'challenge.md', hypothesesCount: challengeSummary.hypotheses.length },
-        decision: { artifactPath: 'assets/decision.json', recommendation: decisionSummary.recommendation || 'Decision completed' },
+        challenge: { artifactPath: 'challenge.md', hypothesesCount: challengeSummary.hypotheses.length, summary: challengeSummary },
+        decision: { artifactPath: 'assets/decision.json', recommendation: decisionSummary.recommendation || 'Decision completed', summary: decisionSummary },
         assets: { projectPath, files: ['challenge.md', 'assets/decision.json'] },
         providerExecutions,
       };

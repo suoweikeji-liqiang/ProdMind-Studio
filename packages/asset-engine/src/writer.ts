@@ -2,6 +2,18 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { ProjectState, AssetWriter } from '@prodmind/shared-types';
 
+type RequirementArtifactType = 'idea' | 'spec' | 'acceptance' | 'tasks';
+
+export interface RequirementDraftArtifact {
+  artifactType: RequirementArtifactType;
+  title: string;
+  path: string;
+  content: string;
+  updatedAt: string;
+}
+
+export type RequirementDraftPack = Record<RequirementArtifactType, RequirementDraftArtifact>;
+
 function readOpenPoints(state: ProjectState): string[] {
   const points: string[] = [];
   const projection = state.projection;
@@ -155,3 +167,36 @@ export function createAssetWriter(): AssetWriter {
   };
 }
 
+export async function writeRequirementDraftPack(projectDir: string, state: ProjectState): Promise<RequirementDraftPack> {
+  await fs.mkdir(projectDir, { recursive: true });
+  const writer = createAssetWriter();
+  const [ideaPath, specPath, acceptancePath, tasksPath] = await Promise.all([
+    writer.writeIdea(projectDir, state),
+    writer.writeSpec(projectDir, state),
+    writer.writeAcceptance(projectDir, state),
+    writer.writeTasks(projectDir, state),
+  ]);
+
+  const definitions: Array<[RequirementArtifactType, string, string]> = [
+    ['idea', ideaPath, 'Idea Draft'],
+    ['spec', specPath, 'Spec Draft'],
+    ['acceptance', acceptancePath, 'Acceptance Draft'],
+    ['tasks', tasksPath, 'Tasks Draft'],
+  ];
+
+  const entries = await Promise.all(definitions.map(async ([artifactType, filePath, title]) => {
+    const content = await fs.readFile(filePath, 'utf8');
+    return [
+      artifactType,
+      {
+        artifactType,
+        title,
+        path: filePath,
+        content,
+        updatedAt: new Date().toISOString(),
+      },
+    ] as const;
+  }));
+
+  return Object.fromEntries(entries) as RequirementDraftPack;
+}

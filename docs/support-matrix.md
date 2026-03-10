@@ -4,18 +4,17 @@
 
 | Surface | Status | Intended Usage | Notes |
 |---------|--------|----------------|-------|
-| Web home | Internal V1 candidate | Start new workflows | Primary entry |
-| Web workflow | Internal V1 candidate | Submit and watch a run | Stage visibility only, thin shell |
-| Web results | Internal V1 candidate | Read structured outputs | Falls back to persisted history when live state is gone |
-| Web history list/detail | Internal V1 candidate | Revisit prior runs | Read-only single-user history |
-| CLI workflow | Internal V1 candidate | Operator-run workflow | Secondary surface |
+| Web home | Internal V1 candidate | Start topic-first sessions | Primary entry |
+| Web session/history/replay | Migrating V1 surface | Continue sessions and revisit process history | Conversation-first target surface |
+| Web workflow/results | Legacy compatibility | Submit and inspect old workflow runs | Transitional path during migration |
+| CLI workflow | Internal V1 candidate | Operator-run legacy workflow | Secondary surface and V1 baseline |
 | CLI history list/detail | Internal V1 candidate | Operator revisit and diagnosis | Stronger text-based recovery guidance |
 
 ## Persistence Backends
 
 | Backend | Status | Default | Intended Usage | Notes |
 |---------|--------|---------|----------------|-------|
-| File | Internal-pilot ready | Yes | Default single-user workflows | Stable path for V1 |
+| File | Internal-pilot ready | Yes | Default single-user sessions and legacy workflows | Stable path for V1 |
 | SQLite | Validated secondary backend | No | Optional operator validation | Depends on native binding support |
 | PostgreSQL | Deferred | No | Out of V1 scope | Heavy DB productization intentionally deferred |
 

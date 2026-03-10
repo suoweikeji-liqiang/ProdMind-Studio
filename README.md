@@ -1,21 +1,31 @@
 # ProdMind-Studio
 
-ProdMind-Studio is now being closed into a V1 single-user decision workbench.
+ProdMind-Studio is a conversation-first internal thinking tool.
 
-The intended operator path is:
+The intended primary journey is:
 
-`idea input -> challenge -> decision -> asset output -> history revisit -> basic recovery`
+`topic input -> session -> mode-guided multi-round conversation -> draft summaries -> finalized artifacts -> history -> replay`
 
-Current maturity: internal-pilot ready for single-user usage.
+Current maturity: internal-pilot ready for single-user usage while the product migrates from legacy workflow semantics to session semantics.
+
+## Product Position
+
+- Web is the primary product surface
+- CLI remains a secondary operator surface and baseline reference for the original V1 feel
+- The main experience is Chinese multi-round conversation
+- `challenge`, `decision`, and `requirement-build` are user-selected thinking modes
+- Visible multi-role output and full process persistence are core product commitments
+
+See [docs/product-principles.md](docs/product-principles.md) and [docs/v1-boundary.md](docs/v1-boundary.md) for the explicit product boundary.
 
 ## What V1 Includes
 
-- Web as the primary entry point
-- CLI as a secondary operator surface
+- Topic-first session entry
+- Web session history and replay
 - Fake provider as the default safe path
 - Opt-in real-provider validation path
-- Persisted history and result revisit
-- Provider reliability and usage summary visibility
+- Persisted session state and artifact revisit
+- Provider reliability and usage summary visibility as operator context
 
 ## What V1 Does Not Include
 
@@ -27,8 +37,6 @@ Current maturity: internal-pilot ready for single-user usage.
 - heavy dashboard platform
 - mobile app
 - heavy DB productization
-
-See [docs/v1-boundary.md](docs/v1-boundary.md) for the explicit release boundary.
 
 ## Recommended Start
 
@@ -44,7 +52,7 @@ pnpm install
 pnpm run check:all
 ```
 
-3. Start Web, the primary V1 entry:
+3. Start Web, the primary entry:
 
 ```bash
 cd apps/web
@@ -57,8 +65,13 @@ node dist/server.js
 ```bash
 cd apps/cli
 pnpm run build
-node dist/index.js workflow "your idea here"
+node dist/index.js workflow "your topic here"
 ```
+
+Note:
+
+- The current CLI still exposes legacy workflow-style commands.
+- The current Web implementation is migrating away from workflow/results semantics toward session/history/replay semantics.
 
 ## Provider Modes
 
@@ -82,12 +95,10 @@ Examples:
 Repo root `.env`
 
 ```env
-# Default fake-provider path
 PROVIDER_MODE=fake
 ```
 
 ```env
-# OpenAI-compatible Qwen example
 PROVIDER_MODE=real
 PROVIDER_TYPE=openai
 PROVIDER_NAME=qwen
@@ -97,7 +108,6 @@ MODEL_ID=qwen-plus
 ```
 
 ```env
-# OpenAI-compatible DeepSeek example
 PROVIDER_MODE=real
 PROVIDER_TYPE=openai
 PROVIDER_NAME=deepseek
@@ -115,7 +125,7 @@ MODEL_ID=qwen-max
 Command examples:
 
 ```bash
-node apps/cli/dist/index.js workflow "your idea"
+node apps/cli/dist/index.js workflow "your topic"
 node scripts/smoke-real-provider.mjs
 ```
 
@@ -137,6 +147,7 @@ node scripts/test-package.mjs --scope apps/cli --package @prodmind/app-cli
 
 ## Docs
 
+- [docs/product-principles.md](docs/product-principles.md)
 - [docs/v1-boundary.md](docs/v1-boundary.md)
 - [docs/v1-release-checklist.md](docs/v1-release-checklist.md)
 - [docs/runbook.md](docs/runbook.md)

@@ -2,37 +2,44 @@
 
 ## Product Shape
 
-ProdMind-Studio V1 is a single-user decision workbench.
+ProdMind-Studio V1 is a conversation-first internal thinking tool.
 
 The intended operator journey is:
 
-`idea input -> challenge -> decision -> asset output -> history revisit -> basic recovery`
+`topic input -> session -> mode-guided multi-round conversation -> draft summaries -> finalized artifacts -> session history -> replay`
 
-Web is the primary entry point. CLI remains a secondary operator surface.
+Web is the primary entry point. CLI remains a secondary operator surface and reference baseline for the original V1 experience.
 
 ## V1 Must-Have
 
-- Web home page with a clear start path for a new workflow
-- Web workflow execution path with stage visibility
-- Web results page with structured challenge, decision, asset, and provider summary sections
-- Web history list and history detail pages for revisit
-- CLI workflow path for operator use
-- CLI history list and history detail commands
-- Persisted history and result retrieval for revisit after the live run is gone
-- Basic failure and recovery semantics:
-  - where the failure happened
-  - what was already completed
-  - what the operator should do next
+- Web home page that requires a topic before a new session starts
+- Web session page as the primary product surface
+- Manual mode switching across:
+  - `challenge`
+  - `decision`
+  - `requirement-build`
+- Mode switching persists until the user changes it again
+- Visible multi-role output in every mode
+- Full session timeline persistence:
+  - user messages
+  - mode switches
+  - role messages
+  - draft updates
+  - artifact finalization events
+- Session history organized by topic/session, not by workflow run
+- Session replay that can reopen the preserved process
+- Per-mode draft summaries and explicit final artifact versions
+- Chinese-first UI copy and serious product framing
 - Fake provider as the default safe path
 - Opt-in real-provider validation path
-- Docs, runbook, and readiness language aligned with internal pilot reality
+- Docs, runbook, and readiness language aligned with internal single-user pilot reality
 
 ## Nice To Have But Deferrable
 
-- Richer result copy polish beyond the current structured summaries
-- More detailed history summaries or filtering
-- More provider validation evidence from real pilot runs
-- Optional budget guardrails if pilot evidence later justifies them
+- Richer role orchestration beyond the first Web session recovery of V1 behavior
+- Stronger replay controls and timeline filtering
+- Better artifact diffing between finalized versions
+- More provider validation evidence from internal pilot runs
 - Additional SQLite operator evidence in environments with native binding support
 
 ## Explicitly Out Of Scope For V1
@@ -46,14 +53,16 @@ Web is the primary entry point. CLI remains a secondary operator surface.
 - mobile app
 - heavy DB productization
 - advanced analytics or reporting product
-- orchestration beyond the current thin shells
+- automatic mode switching
+- multi-topic freeform chat in one session
 
 ## UX Boundary
 
-- Web stays thin and read-only around engine outputs.
-- CLI stays operator-oriented and secondary.
-- History is for revisit, not team collaboration.
-- Result rendering stays structured, not a chat shell.
+- Web is the main product surface and must be conversation-first.
+- The session page is primary; workflow/result pages are legacy compatibility only.
+- History is for session revisit and replay, not team collaboration.
+- The UI must preserve visible multi-role thinking, not collapse everything into one assistant voice.
+- The product should feel serious and cognitively demanding, not like a general chat assistant.
 
 ## Provider Boundary
 

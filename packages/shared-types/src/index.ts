@@ -4,6 +4,8 @@ export * from './domain/challenge-artifact.js';
 export * from './domain/challenge-session.js';
 export * from './domain/decision.js';
 export * from './domain/decision-artifact.js';
+export * from './session/conversation.js';
+export * from './session/artifacts.js';
 export * from './persistence/store.js';
 export * from './persistence/repository.js';
 export * from './workflow/execution.js';

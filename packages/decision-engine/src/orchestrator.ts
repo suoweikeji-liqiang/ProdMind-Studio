@@ -1,5 +1,5 @@
 import type { LLMAdapter } from '@prodmind/llm-adapter';
-import type { DecisionSessionState, DecisionStep, DecisionSummary } from '@prodmind/shared-types';
+import type { DecisionSessionState, DecisionStep, DecisionSummary, ModeMessage, RoleIdentity } from '@prodmind/shared-types';
 import { appendStep, updateStatus } from './session.js';
 
 const DECISION_PROMPT = `You are a decision analysis assistant. Analyze the problem and provide structured decision support.
@@ -15,6 +15,19 @@ Provide your analysis in the following format based on the step type:
 - summary: Provide final recommendation
 
 Be concise and structured.`;
+
+const DECISION_ROLE_BY_STEP: Record<DecisionStep['type'], RoleIdentity> = {
+  hypothesis_eval: { roleId: 'solution', roleName: '方案官' },
+  risk_eval: { roleId: 'risk', roleName: '风险官' },
+  option_compare: { roleId: 'tradeoff', roleName: '权衡官' },
+  summary: { roleId: 'verdict', roleName: '裁决官' },
+};
+
+export interface DecisionModeOutput {
+  roleSet: RoleIdentity[];
+  messages: ModeMessage[];
+  draftSummary: string;
+}
 
 export async function runDecisionStep(
   session: DecisionSessionState,
@@ -84,6 +97,30 @@ export function buildDecisionSummary(session: DecisionSessionState): DecisionSum
   }
 
   return summary;
+}
+
+export function buildDecisionModeOutput(session: DecisionSessionState): DecisionModeOutput {
+  const summary = buildDecisionSummary(session);
+  const messages: ModeMessage[] = session.steps.map((step) => {
+    const role = DECISION_ROLE_BY_STEP[step.type];
+    return {
+      speaker: 'role',
+      roleId: role.roleId,
+      roleName: role.roleName,
+      content: step.output,
+      timestamp: step.timestamp,
+    };
+  });
+
+  const draftSummary = summary.recommendation
+    ? `当前建议：${summary.recommendation}`
+    : '当前建议仍在整理，请继续补充取舍和约束。';
+
+  return {
+    roleSet: Object.values(DECISION_ROLE_BY_STEP),
+    messages,
+    draftSummary,
+  };
 }
 
 export async function runDecisionOrchestration(

@@ -2,10 +2,10 @@
 
 ## Intended Usage
 
-ProdMind-Studio currently runs as an internal-pilot, single-user decision workbench.
+ProdMind-Studio currently runs as an internal-pilot, conversation-first internal thinking tool.
 
 - Web is the primary entry.
-- CLI is the secondary operator surface.
+- CLI is the secondary operator surface and baseline reference for the original V1 feel.
 - Fake provider is the default stable mode.
 - Real providers remain opt-in.
 
@@ -33,24 +33,24 @@ node dist/server.js
 
 Use the Web surface for:
 
-- starting a new workflow
-- watching stage progress
-- reading structured results
-- reopening prior runs from `/history`
+- starting a new topic-first session
+- continuing a multi-round mode-guided conversation
+- reviewing draft summaries and finalized artifacts
+- reopening prior sessions from history/replay
 
 ## CLI Path
 
 ```bash
 cd apps/cli
 pnpm run build
-node dist/index.js workflow "your idea here"
+node dist/index.js workflow "your topic here"
 node dist/index.js history list
 node dist/index.js history show <runId>
 ```
 
 Use CLI when you need:
 
-- a terminal-driven workflow run
+- a terminal-driven legacy workflow run
 - history revisit from the command line
 - provider failure details and usage summary
 
@@ -61,7 +61,7 @@ Use CLI when you need:
 Use for CI, local development, and default internal-pilot verification.
 
 ```bash
-node apps/cli/dist/index.js workflow "your idea"
+node apps/cli/dist/index.js workflow "your topic"
 ```
 
 ### Real-provider path
@@ -120,7 +120,7 @@ MODEL_ID=deepseek-reasoner
 Direct shell override still works:
 
 ```bash
-PROVIDER_MODE=real OPENAI_API_KEY=sk-xxx MODEL_ID=gpt-4o-mini node apps/cli/dist/index.js workflow "your idea"
+PROVIDER_MODE=real OPENAI_API_KEY=sk-xxx MODEL_ID=gpt-4o-mini node apps/cli/dist/index.js workflow "your topic"
 ```
 
 Notes:
@@ -135,9 +135,9 @@ Notes:
 
 ### Web
 
-- `/history` lists prior runs
-- `/history/:runId` shows phase status, artifacts, recommendation, and provider summary
-- `/results/:id` falls back to persisted history if live run state is gone
+- `/sessions` should become the primary session history list
+- `/sessions/:id/replay` should become the primary replay path
+- legacy `/history` and `/results/:id` remain compatibility paths during migration
 
 ### CLI
 

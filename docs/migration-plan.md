@@ -2,20 +2,46 @@
 
 ## Current Status
 
-Migration phases through Phase 5D are complete enough to support the V1 sprint closeout.
+Migration phases through Phase 5D completed the initial kernel extraction and thin-shell V1 closeout attempt.
+
+As of 2026-03-10, the product direction has been reset at the shell level.
 
 Current product framing:
 
-- single-user decision workbench
+- conversation-first internal thinking tool
 - Web-first usage
-- CLI as operator assist
-- internal-pilot scope only
+- CLI as operator assist and baseline reference for the original V1 feel
+- single-user internal-pilot scope only
+- topic-based sessions with user-selected thinking modes
 
 Current release docs:
 
+- [product-principles.md](product-principles.md)
 - [v1-boundary.md](v1-boundary.md)
 - [v1-release-checklist.md](v1-release-checklist.md)
 - [release-readiness.md](release-readiness.md)
+
+## Direction Reset: Why the Shell Changed
+
+The initial unified product shell over-optimized for a thin workflow path:
+
+- `idea -> challenge -> decision -> asset -> history`
+
+That shell preserved engine composition, but it lost the strongest product traits of the original systems:
+
+- multi-round conversation
+- visible multi-role thinking
+- Chinese-first interaction
+- process preservation as a first-class asset
+
+The new direction keeps the extracted engines, but redefines the product shell around:
+
+- one topic per session
+- three user-selected thinking modes
+- full process timeline
+- per-mode drafts and finalized artifacts
+
+This is a shell correction, not a kernel rewrite.
 
 ## Total Principles
 - Do not copy old repos wholesale.
@@ -24,18 +50,50 @@ Current release docs:
 - Every migration step must map to concrete source files.
 - Preserve behavior through contracts and tests, not by preserving old directory shapes.
 - Prefer incremental compatibility shims over framework-coupled rewrites.
+- Do not let legacy workflow-runner semantics redefine the product again.
 
-## Why Phase 1 Starts Where It Starts
-- Target product is a pipeline from challenge/decision to structured assets.
-- Asset accumulation is the final value sink and gives stable integration contracts for later engines.
-- `requirement-co-builder` has the cleanest kernel modularity (state/projects/output/adapter), least UI coupling, and broad tests.
-- Therefore Phase 1 should establish:
-  - `asset-engine` base
-  - shared cross-engine contracts in `shared-types`
-  - provider abstraction in `llm-adapter`
-- This enables challenge/decision extraction to plug into a stable artifact backend, instead of coupling directly to CLI/Web shells.
+## Why the Next Phase Starts With Docs and Session Semantics
+- Kernel extraction is already far enough along.
+- The main problem is now product-shell drift, not missing engine code.
+- Therefore the next implementation phase must start by:
+  - updating product and boundary docs
+  - introducing session-centered shared types
+  - introducing session persistence and replay semantics
+  - rebuilding the Web shell around conversation, not workflow stages
+- This keeps the extracted kernels while correcting the product model.
 
 ## Phase Roadmap
+
+## Phase 6: Conversation-First Product Reset (PLANNED)
+
+### Goal
+- Move the product from workflow-runner semantics to session semantics without discarding the extracted engines.
+
+### Scope
+- update product docs and formal boundaries first
+- add session-centered shared types
+- add session persistence and artifact versioning
+- build a new Web session shell
+- restore V1-like multi-round challenge interaction on Web
+- add decision mode and requirement-build mode on the same session spine
+- convert history and replay from workflow terminology to session terminology
+
+### Explicit Non-Goals
+- collaboration
+- auth
+- automatic mode switching
+- multi-topic freeform chat
+- dashboard productization
+
+### Recommended Execution Order
+1. docs and product principles
+2. shared session model
+3. asset-engine session store
+4. Web session APIs
+5. challenge mode recovery on Web
+6. decision mode
+7. requirement-build mode
+8. history/replay conversion
 
 ## Phase 1: Foundation + Asset Core ✅ COMPLETED
 
