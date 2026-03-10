@@ -238,3 +238,30 @@ export async function appendLiveRoleMessages(
     events: [...roleEvents, ...draftEvent],
   };
 }
+
+export async function replaceLiveModeState(
+  projectPath: string,
+  sessionId: string,
+  state: ModeState
+): Promise<LiveSessionState | null> {
+  const existing = await getLiveSession(projectPath, sessionId);
+  if (!existing) {
+    return null;
+  }
+
+  const timestamp = nowIso();
+  const updatedSession: ConversationSession = {
+    ...existing.session,
+    updatedAt: timestamp,
+    lastActiveAt: timestamp,
+  };
+
+  existing.session = updatedSession;
+  existing.modeStates[state.mode] = state;
+
+  await persistence.saveSession(projectPath, updatedSession);
+  await persistence.saveModeState(projectPath, sessionId, state);
+
+  liveSessions.set(sessionId, existing);
+  return existing;
+}

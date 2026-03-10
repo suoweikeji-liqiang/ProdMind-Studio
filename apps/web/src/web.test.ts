@@ -117,6 +117,8 @@ describe('Web Happy Path', () => {
     expect(sessionHtml).toContain('会话');
     expect(sessionHtml).toContain('当前模式');
     expect(sessionHtml).toContain('当前模式草稿');
+    expect(sessionHtml).toContain('草稿产物');
+    expect(sessionHtml).toContain('已定稿版本');
     expect(sessionHtml).toContain('/api/sessions/session-42');
 
     const historyHtml = renderSessionHistoryPage();
@@ -255,6 +257,8 @@ describe('Web Session Shell', () => {
       expect(sessionResponse.status).toBe(200);
       expect(sessionHtml).toContain('当前模式');
       expect(sessionHtml).toContain('当前模式草稿');
+      expect(sessionHtml).toContain('草稿产物');
+      expect(sessionHtml).toContain('已定稿版本');
       expect(sessionHtml).toContain('/api/sessions/session-123');
 
       const historyResponse = await fetch(`${baseUrl}/sessions`);
@@ -318,7 +322,7 @@ describe('Web Session API', () => {
     });
   });
 
-  it('appends user messages when the active mode has no live engine yet', async () => {
+  it('materializes requirement-build drafts inside the active mode', async () => {
     await withAppServer(async (baseUrl) => {
       const createResponse = await fetch(`${baseUrl}/api/sessions`, {
         method: 'POST',
@@ -339,14 +343,16 @@ describe('Web Session API', () => {
         body: JSON.stringify({ content: 'Challenge this assumption set.', projectPath: testSessionsDir }),
       });
 
-      expect(messageResponse.status).toBe(202);
+      expect(messageResponse.status).toBe(200);
       const accepted = await messageResponse.json();
       expect(accepted.event.type).toBe('user_message');
       expect(accepted.event.mode).toBe('requirement-build');
+      expect(accepted.modeState.draftArtifacts).toEqual(['idea', 'spec', 'acceptance', 'tasks']);
+      expect(accepted.artifacts.drafts.idea.content).toContain('# Idea');
 
       const getResponse = await fetch(`${baseUrl}/api/sessions/${created.session.sessionId}`);
       const loaded = await getResponse.json();
-      expect(loaded.modeState.messages).toHaveLength(1);
+      expect(loaded.modeState.messages).toHaveLength(5);
       expect(loaded.modeState.messages[0].content).toBe('Challenge this assumption set.');
     });
   });
@@ -480,5 +486,66 @@ describe('Web Session API', () => {
       process.env.PROVIDER_TYPE = previous.type;
       process.env.MODEL_ID = previous.modelId;
     }
+  });
+
+  it('builds requirement drafts and finalizes versioned artifacts', async () => {
+    await withAppServer(async (baseUrl) => {
+      const createResponse = await fetch(`${baseUrl}/api/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic: '把当前讨论沉淀成需求资产', projectPath: testSessionsDir }),
+      });
+      const created = await createResponse.json();
+      const sessionId = created.session.sessionId;
+
+      await fetch(`${baseUrl}/api/sessions/${sessionId}/mode`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'requirement-build', projectPath: testSessionsDir }),
+      });
+
+      const draftResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: '请整理成 idea/spec/acceptance/tasks 四份草稿。', projectPath: testSessionsDir }),
+      });
+
+      expect(draftResponse.status).toBe(200);
+      const draftResult = await draftResponse.json();
+      expect(draftResult.modeState.mode).toBe('requirement-build');
+      expect(draftResult.modeState.draftArtifacts).toEqual(['idea', 'spec', 'acceptance', 'tasks']);
+      expect(draftResult.artifacts.drafts.spec.content).toContain('# Spec');
+      expect(draftResult.artifacts.finalized.spec).toEqual([]);
+
+      const finalizeResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/artifacts/finalize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectPath: testSessionsDir, note: 'baseline' }),
+      });
+
+      expect(finalizeResponse.status).toBe(200);
+      const finalized = await finalizeResponse.json();
+      expect(finalized.modeState.finalArtifacts).toContain('spec:v1');
+      expect(finalized.artifacts.finalized.spec[0].version).toBe(1);
+
+      await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: '补充更细的验收标准和任务拆分。', projectPath: testSessionsDir }),
+      });
+
+      const finalizeAgainResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/artifacts/finalize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectPath: testSessionsDir, note: 'expanded' }),
+      });
+
+      expect(finalizeAgainResponse.status).toBe(200);
+      const finalizedAgain = await finalizeAgainResponse.json();
+      expect(finalizedAgain.artifacts.finalized.spec.map((item: { version: number; }) => item.version)).toEqual([1, 2]);
+      expect(finalizedAgain.artifacts.finalized.spec[0].note).toBe('baseline');
+      expect(finalizedAgain.artifacts.finalized.spec[1].note).toBe('expanded');
+      expect(finalizedAgain.artifacts.drafts.tasks.content).toContain('# Tasks');
+    });
   });
 });

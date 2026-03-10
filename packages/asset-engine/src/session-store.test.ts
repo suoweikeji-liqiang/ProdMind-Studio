@@ -107,6 +107,25 @@ describe('SessionStore', () => {
     expect(loaded).toEqual(draft);
   });
 
+  it('lists draft artifacts for one mode without mixing other files', async () => {
+    await store.saveDraftArtifact(testDir, 'session-1', 'requirement-build', 'spec', {
+      title: 'Spec Draft',
+      body: 'Draft spec content',
+    });
+    await store.saveDraftArtifact(testDir, 'session-1', 'requirement-build', 'tasks', {
+      title: 'Tasks Draft',
+      body: 'Draft tasks content',
+    });
+
+    const drafts = await store.listDraftArtifacts(testDir, 'session-1', 'requirement-build');
+
+    expect(Object.keys(drafts).sort()).toEqual(['spec', 'tasks']);
+    expect(drafts.spec).toEqual({
+      title: 'Spec Draft',
+      body: 'Draft spec content',
+    });
+  });
+
   it('finalizes artifact versions without overwriting earlier versions', async () => {
     const version1: ArtifactVersion = {
       artifactId: 'artifact-spec',
@@ -128,12 +147,15 @@ describe('SessionStore', () => {
     };
 
     await store.finalizeArtifact(testDir, 'session-1', version1);
+    await store.saveDraftArtifact(testDir, 'session-1', 'requirement-build', 'spec', { title: 'Spec Draft v2' });
     await store.finalizeArtifact(testDir, 'session-1', version2);
 
     const versions = await store.listArtifactVersions(testDir, 'session-1', 'requirement-build', 'spec');
+    const draft = await store.getDraftArtifact(testDir, 'session-1', 'requirement-build', 'spec');
 
     expect(versions.map((item) => item.version)).toEqual([1, 2]);
     expect(versions[0]?.content).toEqual({ title: 'Spec v1' });
     expect(versions[1]?.note).toBe('Expanded acceptance criteria');
+    expect(draft).toEqual({ title: 'Spec Draft v2' });
   });
 });

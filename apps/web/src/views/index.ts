@@ -410,6 +410,14 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
         <div id="draftPanel" class="empty">当前模式的草稿摘要、定稿版本和结构化产物会显示在这里。</div>
       </div>
       <div class="card">
+        <h2>草稿产物</h2>
+        <div id="draftArtifactsPanel" class="empty">当前模式还没有结构化草稿产物。</div>
+      </div>
+      <div class="card">
+        <h2>已定稿版本</h2>
+        <div id="finalizedArtifactsPanel" class="empty">当前模式还没有定稿版本。</div>
+      </div>
+      <div class="card">
         <h2>输入提示</h2>
         <p>先在当前模式下继续提问，再决定是否切到其他模式。每个模式维护自己的上下文，但共用同一个议题。</p>
       </div>
@@ -444,6 +452,41 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
       )).join('');
     }
 
+    function renderDraftArtifacts(drafts) {
+      const entries = Object.entries(drafts || {});
+      if (entries.length === 0) {
+        return '<div class="empty">当前模式还没有结构化草稿产物。</div>';
+      }
+
+      return entries.map(([artifactType, artifact]) => {
+        const content = artifact && typeof artifact === 'object' && 'content' in artifact
+          ? String(artifact.content)
+          : JSON.stringify(artifact, null, 2);
+        return '' +
+          '<div class="timeline-item">' +
+            '<strong>' + escapeHtml(artifactType) + '</strong>' +
+            '<div>' + escapeHtml(content).replaceAll('\\n', '<br>') + '</div>' +
+          '</div>';
+      }).join('');
+    }
+
+    function renderFinalizedArtifacts(finalized) {
+      const entries = Object.entries(finalized || {}).filter(([, versions]) => Array.isArray(versions) && versions.length > 0);
+      if (entries.length === 0) {
+        return '<div class="empty">当前模式还没有定稿版本。</div>';
+      }
+
+      return entries.map(([artifactType, versions]) => (
+        '<div class="timeline-item">' +
+          '<strong>' + escapeHtml(artifactType) + '</strong>' +
+          '<div>' + versions.map((version) => {
+            const note = version.note ? ' · ' + escapeHtml(version.note) : '';
+            return '<div>v' + escapeHtml(version.version) + note + '</div>';
+          }).join('') + '</div>' +
+        '</div>'
+      )).join('');
+    }
+
     async function loadSession() {
       try {
         const response = await fetch('/api/sessions/${escapeHtml(sessionId)}');
@@ -465,11 +508,17 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
         document.getElementById('draftPanel').innerHTML = data.modeState && data.modeState.draftSummary
           ? '<div class="timeline-item"><strong>当前模式草稿</strong><div>' + escapeHtml(data.modeState.draftSummary.summary) + '</div></div>'
           : '<div class="empty">当前模式还没有草稿摘要。</div>';
+        document.getElementById('draftArtifactsPanel').innerHTML = renderDraftArtifacts(data.artifacts && data.artifacts.drafts);
+        document.getElementById('finalizedArtifactsPanel').innerHTML = renderFinalizedArtifacts(data.artifacts && data.artifacts.finalized);
       } catch (error) {
         document.getElementById('sessionMeta').innerHTML =
           '<div class="callout danger"><strong>无法加载会话。</strong><p class="small">' + escapeHtml(error.message) + '</p></div>';
         document.getElementById('draftPanel').innerHTML =
           '<div class="callout danger"><strong>无法加载草稿。</strong><p class="small">' + escapeHtml(error.message) + '</p></div>';
+        document.getElementById('draftArtifactsPanel').innerHTML =
+          '<div class="callout danger"><strong>无法加载草稿产物。</strong><p class="small">' + escapeHtml(error.message) + '</p></div>';
+        document.getElementById('finalizedArtifactsPanel').innerHTML =
+          '<div class="callout danger"><strong>无法加载定稿版本。</strong><p class="small">' + escapeHtml(error.message) + '</p></div>';
       }
     }
 

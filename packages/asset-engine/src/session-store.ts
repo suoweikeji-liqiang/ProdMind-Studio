@@ -23,6 +23,7 @@ export interface SessionStore {
   getModeState(projectPath: string, sessionId: string, mode: ConversationMode): Promise<ModeState | null>;
   saveDraftArtifact(projectPath: string, sessionId: string, mode: ConversationMode, artifactType: string, content: unknown): Promise<void>;
   getDraftArtifact(projectPath: string, sessionId: string, mode: ConversationMode, artifactType: string): Promise<unknown | null>;
+  listDraftArtifacts(projectPath: string, sessionId: string, mode: ConversationMode): Promise<Record<string, unknown>>;
   finalizeArtifact(projectPath: string, sessionId: string, artifact: ArtifactVersion): Promise<void>;
   listArtifactVersions(projectPath: string, sessionId: string, mode: ConversationMode, artifactType: string): Promise<ArtifactVersion[]>;
 }
@@ -125,6 +126,29 @@ export function createSessionStore(): SessionStore {
 
     async getDraftArtifact(projectPath: string, sessionId: string, mode: ConversationMode, artifactType: string): Promise<unknown | null> {
       return readJson(getDraftArtifactFile(projectPath, sessionId, mode, artifactType));
+    },
+
+    async listDraftArtifacts(projectPath: string, sessionId: string, mode: ConversationMode): Promise<Record<string, unknown>> {
+      const artifactDir = path.join(getSessionRoot(projectPath, sessionId), 'artifacts', mode);
+      try {
+        const files = await fs.readdir(artifactDir);
+        const matching = files.filter((file) => file.endsWith('.draft.json'));
+        const entries = await Promise.all(
+          matching.map(async (file) => {
+            const raw = await readJson<unknown>(path.join(artifactDir, file));
+            return [file.replace(/\.draft\.json$/, ''), raw] as const;
+          })
+        );
+
+        return entries.reduce<Record<string, unknown>>((drafts, [artifactType, content]) => {
+          if (content !== null) {
+            drafts[artifactType] = content;
+          }
+          return drafts;
+        }, {});
+      } catch {
+        return {};
+      }
     },
 
     async finalizeArtifact(projectPath: string, sessionId: string, artifact: ArtifactVersion): Promise<void> {
