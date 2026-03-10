@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import type { RuntimeProviderConfig } from '@prodmind/llm-adapter';
 
 type EnvMap = Record<string, string | undefined>;
+const DEFAULT_WEB_REAL_PROVIDER_TIMEOUT_MS = 60_000;
 
 function readNumber(value: string | undefined): number | undefined {
   if (!value) {
@@ -12,6 +13,18 @@ function readNumber(value: string | undefined): number | undefined {
 
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function resolveTimeoutMs(
+  providerMode: 'fake' | 'real',
+  rawValue: string | undefined
+): number | undefined {
+  const parsed = readNumber(rawValue);
+  if (typeof parsed === 'number') {
+    return parsed;
+  }
+
+  return providerMode === 'real' ? DEFAULT_WEB_REAL_PROVIDER_TIMEOUT_MS : undefined;
 }
 
 function resolveEnvPaths(moduleUrl: string): { rootDir: string; appDir: string } {
@@ -109,7 +122,7 @@ export function loadProviderConfigFromEnv(env: EnvMap): RuntimeProviderConfig {
     name: env.PROVIDER_NAME,
     modelId: env.MODEL_ID,
     baseURL: env.PROVIDER_BASE_URL,
-    timeoutMs: readNumber(env.PROVIDER_TIMEOUT_MS),
+    timeoutMs: resolveTimeoutMs(providerMode, env.PROVIDER_TIMEOUT_MS),
     maxRetries: readNumber(env.PROVIDER_MAX_RETRIES),
     pricing: readNumber(env.PROVIDER_PRICE_INPUT_PER_MILLION_USD) || readNumber(env.PROVIDER_PRICE_OUTPUT_PER_MILLION_USD)
       ? {
@@ -124,7 +137,7 @@ export function loadProviderConfigFromEnv(env: EnvMap): RuntimeProviderConfig {
           name: env.PROVIDER_FALLBACK_NAME,
           modelId: env.PROVIDER_FALLBACK_MODEL_ID,
           baseURL: env.PROVIDER_FALLBACK_BASE_URL,
-          timeoutMs: readNumber(env.PROVIDER_FALLBACK_TIMEOUT_MS),
+          timeoutMs: resolveTimeoutMs(providerMode, env.PROVIDER_FALLBACK_TIMEOUT_MS),
           maxRetries: readNumber(env.PROVIDER_FALLBACK_MAX_RETRIES),
           pricing: readNumber(env.PROVIDER_FALLBACK_PRICE_INPUT_PER_MILLION_USD) || readNumber(env.PROVIDER_FALLBACK_PRICE_OUTPUT_PER_MILLION_USD)
             ? {

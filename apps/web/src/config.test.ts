@@ -100,4 +100,27 @@ describe('web config', () => {
     expect(config.type).toBe('anthropic');
     expect(config.modelId).toBe('claude-3-5-haiku-20241022');
   });
+
+  it('applies longer web timeout defaults for real providers when unset', async () => {
+    const configModule = await import('./config.js');
+    expect(typeof configModule.loadProviderConfigFromEnv).toBe('function');
+    if (typeof configModule.loadProviderConfigFromEnv !== 'function') {
+      return;
+    }
+
+    const config = configModule.loadProviderConfigFromEnv({
+      PROVIDER_MODE: 'real',
+      PROVIDER_TYPE: 'openai',
+      PROVIDER_API_KEY: 'compat-key',
+      PROVIDER_BASE_URL: 'https://compat.example/v1',
+      MODEL_ID: 'qwen-plus',
+      PROVIDER_FALLBACK_TYPE: 'openai',
+      PROVIDER_FALLBACK_API_KEY: 'fallback-key',
+      PROVIDER_FALLBACK_BASE_URL: 'https://fallback.example/v1',
+      PROVIDER_FALLBACK_MODEL_ID: 'deepseek-chat',
+    } as NodeJS.ProcessEnv);
+
+    expect(config.timeoutMs).toBe(60000);
+    expect(config.fallback?.timeoutMs).toBe(60000);
+  });
 });

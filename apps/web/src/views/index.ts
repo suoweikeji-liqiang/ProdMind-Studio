@@ -388,11 +388,12 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
         <h2>当前模式</h2>
         <div id="sessionMeta" class="empty">正在加载会话状态...</div>
         <div class="mode-switcher">
-          <button class="mode-pill" type="button" data-mode="challenge">challenge</button>
-          <button class="mode-pill" type="button" data-mode="decision">decision</button>
-          <button class="mode-pill" type="button" data-mode="requirement-build">requirement-build</button>
+          <button class="mode-pill" type="button" data-mode="challenge">challenge 质疑</button>
+          <button class="mode-pill" type="button" data-mode="decision">decision 裁决</button>
+          <button class="mode-pill" type="button" data-mode="requirement-build">requirement-build 需求共建</button>
         </div>
         <p class="small">模式切换后会持续生效，直到你再次切换。</p>
+        <div id="sessionStatusBanner" class="empty">切换模式、发送消息和定稿后，结果会立即刷新到时间线和右栏。</div>
       </div>
       <div class="card">
         <h2>完整时间线</h2>
@@ -402,6 +403,24 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
             <span class="microcopy">后续这里会显示用户消息、多角色发言和模式切换事件。</span>
           </div>
         </div>
+      </div>
+      <div class="card">
+        <h2>继续推进</h2>
+        <form id="sessionMessageForm" class="stack">
+          <div>
+            <label for="sessionMessageInput">当前模式输入</label>
+            <textarea
+              id="sessionMessageInput"
+              name="content"
+              required
+              placeholder="继续在当前模式下推进这一议题。例如：补充一个事实、提出一个反例、要求做出取舍，或者要求整理成结构化草稿。"
+            ></textarea>
+          </div>
+          <div class="actions">
+            <button id="sessionSendButton" type="submit">发送本轮输入</button>
+          </div>
+          <div id="sessionComposerError" class="small" style="color: var(--danger);"></div>
+        </form>
       </div>
     </div>
     <div class="stack">
@@ -418,12 +437,32 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
         <div id="finalizedArtifactsPanel" class="empty">当前模式还没有定稿版本。</div>
       </div>
       <div class="card">
-        <h2>输入提示</h2>
-        <p>先在当前模式下继续提问，再决定是否切到其他模式。每个模式维护自己的上下文，但共用同一个议题。</p>
+        <h2>定稿操作</h2>
+        <form id="finalizeArtifactsForm" class="stack">
+          <div>
+            <label for="finalizeNote">本次定稿备注</label>
+            <input
+              id="finalizeNote"
+              name="note"
+              type="text"
+              placeholder="例如：baseline / expanded acceptance"
+            />
+          </div>
+          <div class="actions">
+            <button id="finalizeArtifactsButton" type="submit">生成新版本</button>
+          </div>
+          <div id="finalizeArtifactsError" class="small" style="color: var(--danger);"></div>
+        </form>
+        <p class="small">只在 <code>requirement-build</code> 模式下启用，且会保留所有历史版本。</p>
       </div>
     </div>
   </section>
   <script>
+    const sessionPath = '/api/sessions/${escapeHtml(sessionId)}';
+    const sessionModePath = '/api/sessions/${escapeHtml(sessionId)}/mode';
+    const sessionMessagePath = '/api/sessions/${escapeHtml(sessionId)}/messages';
+    const sessionFinalizePath = '/api/sessions/${escapeHtml(sessionId)}/artifacts/finalize';
+
     function escapeHtml(value) {
       return String(value ?? '')
         .replaceAll('&', '&amp;')
@@ -433,9 +472,37 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
         .replaceAll("'", '&#39;');
     }
 
-    function renderModePills(currentMode) {
+    function modeLabel(mode) {
+      if (mode === 'challenge') return 'challenge 质疑';
+      if (mode === 'decision') return 'decision 裁决';
+      if (mode === 'requirement-build') return 'requirement-build 需求共建';
+      return String(mode || 'unknown');
+    }
+
+    function setInlineMessage(elementId, message) {
+      document.getElementById(elementId).textContent = message || '';
+    }
+
+    function setStatusBanner(kind, title, message) {
+      const banner = document.getElementById('sessionStatusBanner');
+      if (!title && !message) {
+        banner.className = 'empty';
+        banner.innerHTML = '切换模式、发送消息和定稿后，结果会立即刷新到时间线和右栏。';
+        return;
+      }
+
+      const danger = kind === 'danger' ? ' danger' : '';
+      const success = kind === 'success' ? ' success' : '';
+      banner.className = 'callout' + danger + success;
+      banner.innerHTML =
+        '<strong>' + escapeHtml(title) + '</strong>' +
+        (message ? '<p class="small">' + escapeHtml(message) + '</p>' : '');
+    }
+
+    function renderModePills(currentMode, disabled) {
       for (const button of document.querySelectorAll('[data-mode]')) {
         button.classList.toggle('active', button.dataset.mode === currentMode);
+        button.disabled = disabled;
       }
     }
 
@@ -447,7 +514,8 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
       return messages.map((message) => (
         '<div class="timeline-item">' +
           '<strong>' + escapeHtml(message.roleName || (message.speaker === 'user' ? '用户' : '系统')) + '</strong>' +
-          '<div>' + escapeHtml(message.content) + '</div>' +
+          '<div>' + escapeHtml(message.content).replaceAll('\\n', '<br>') + '</div>' +
+          (message.timestamp ? '<div class="microcopy" style="margin-top: 8px;">' + escapeHtml(message.timestamp) + '</div>' : '') +
         '</div>'
       )).join('');
     }
@@ -487,41 +555,192 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
       )).join('');
     }
 
-    async function loadSession() {
+    function updateComposerHint(currentMode) {
+      const input = document.getElementById('sessionMessageInput');
+      if (currentMode === 'challenge') {
+        input.placeholder = '继续追问、补充事实、提出反例，或者要求某个角色从另一个角度继续挑战。';
+        return;
+      }
+      if (currentMode === 'decision') {
+        input.placeholder = '要求比较方案、说明取舍、给出建议，或者逼它明确风险和前提条件。';
+        return;
+      }
+      input.placeholder = '要求整理成 idea/spec/acceptance/tasks 草稿，或者补充结构和验收标准。';
+    }
+
+    function syncFinalizeControls(data, disabled) {
+      const button = document.getElementById('finalizeArtifactsButton');
+      const noteInput = document.getElementById('finalizeNote');
+      const currentMode = data && data.session ? data.session.currentMode : '';
+      const drafts = data && data.artifacts && data.artifacts.drafts ? Object.keys(data.artifacts.drafts) : [];
+      const versions = data && data.artifacts && data.artifacts.finalized && Array.isArray(data.artifacts.finalized.spec)
+        ? data.artifacts.finalized.spec.length
+        : 0;
+
+      const canFinalize = currentMode === 'requirement-build' && drafts.length > 0 && !disabled;
+      button.disabled = !canFinalize;
+      noteInput.disabled = currentMode !== 'requirement-build' || disabled;
+      button.textContent = versions > 0 ? '生成下一版' : '生成首版';
+    }
+
+    function applySessionData(data, options) {
+      const disabled = Boolean(options && options.disabled);
+      renderModePills(data.session.currentMode, disabled);
+      updateComposerHint(data.session.currentMode);
+      document.getElementById('sessionSendButton').disabled = disabled;
+      document.getElementById('sessionMeta').innerHTML =
+        '<div class="meta-grid">' +
+          '<div class="timeline-item"><strong>议题</strong>' + escapeHtml(data.session.topic) + '</div>' +
+          '<div class="timeline-item"><strong>当前模式</strong>' + escapeHtml(modeLabel(data.session.currentMode)) + '</div>' +
+          '<div class="timeline-item"><strong>状态</strong>' + escapeHtml(data.session.status) + '</div>' +
+          '<div class="timeline-item"><strong>最近活跃</strong>' + escapeHtml(data.session.lastActiveAt || data.session.updatedAt || '') + '</div>' +
+        '</div>';
+      document.getElementById('timeline').innerHTML = renderTimeline(data.modeState && data.modeState.messages);
+      document.getElementById('draftPanel').innerHTML = data.modeState && data.modeState.draftSummary
+        ? '<div class="timeline-item"><strong>当前模式草稿</strong><div>' + escapeHtml(data.modeState.draftSummary.summary).replaceAll('\\n', '<br>') + '</div></div>'
+        : '<div class="empty">当前模式还没有草稿摘要。</div>';
+      document.getElementById('draftArtifactsPanel').innerHTML = renderDraftArtifacts(data.artifacts && data.artifacts.drafts);
+      document.getElementById('finalizedArtifactsPanel').innerHTML = renderFinalizedArtifacts(data.artifacts && data.artifacts.finalized);
+      syncFinalizeControls(data, disabled);
+    }
+
+    async function readJson(response) {
+      const data = await response.json().catch(() => ({}));
+      return data && typeof data === 'object' ? data : {};
+    }
+
+    async function loadSession(statusMessage) {
       try {
-        const response = await fetch('/api/sessions/${escapeHtml(sessionId)}');
-        const data = await response.json();
+        const response = await fetch(sessionPath);
+        const data = await readJson(response);
         if (!response.ok) {
           document.getElementById('sessionMeta').innerHTML =
             '<div class="callout danger"><strong>无法加载会话。</strong><p class="small">' + escapeHtml(data.error || 'Unknown error') + '</p></div>';
+          document.getElementById('draftPanel').innerHTML =
+            '<div class="callout danger"><strong>无法加载草稿。</strong><p class="small">' + escapeHtml(data.error || 'Unknown error') + '</p></div>';
           return;
         }
 
-        renderModePills(data.session.currentMode);
-        document.getElementById('sessionMeta').innerHTML =
-          '<div class="meta-grid">' +
-            '<div class="timeline-item"><strong>议题</strong>' + escapeHtml(data.session.topic) + '</div>' +
-            '<div class="timeline-item"><strong>当前模式</strong>' + escapeHtml(data.session.currentMode) + '</div>' +
-            '<div class="timeline-item"><strong>状态</strong>' + escapeHtml(data.session.status) + '</div>' +
-          '</div>';
-        document.getElementById('timeline').innerHTML = renderTimeline(data.modeState && data.modeState.messages);
-        document.getElementById('draftPanel').innerHTML = data.modeState && data.modeState.draftSummary
-          ? '<div class="timeline-item"><strong>当前模式草稿</strong><div>' + escapeHtml(data.modeState.draftSummary.summary) + '</div></div>'
-          : '<div class="empty">当前模式还没有草稿摘要。</div>';
-        document.getElementById('draftArtifactsPanel').innerHTML = renderDraftArtifacts(data.artifacts && data.artifacts.drafts);
-        document.getElementById('finalizedArtifactsPanel').innerHTML = renderFinalizedArtifacts(data.artifacts && data.artifacts.finalized);
+        applySessionData(data, { disabled: false });
+        if (statusMessage) {
+          setStatusBanner('success', statusMessage.title, statusMessage.message);
+        } else {
+          setStatusBanner('', '', '');
+        }
       } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
         document.getElementById('sessionMeta').innerHTML =
-          '<div class="callout danger"><strong>无法加载会话。</strong><p class="small">' + escapeHtml(error.message) + '</p></div>';
+          '<div class="callout danger"><strong>无法加载会话。</strong><p class="small">' + escapeHtml(message) + '</p></div>';
         document.getElementById('draftPanel').innerHTML =
-          '<div class="callout danger"><strong>无法加载草稿。</strong><p class="small">' + escapeHtml(error.message) + '</p></div>';
+          '<div class="callout danger"><strong>无法加载草稿。</strong><p class="small">' + escapeHtml(message) + '</p></div>';
         document.getElementById('draftArtifactsPanel').innerHTML =
-          '<div class="callout danger"><strong>无法加载草稿产物。</strong><p class="small">' + escapeHtml(error.message) + '</p></div>';
+          '<div class="callout danger"><strong>无法加载草稿产物。</strong><p class="small">' + escapeHtml(message) + '</p></div>';
         document.getElementById('finalizedArtifactsPanel').innerHTML =
-          '<div class="callout danger"><strong>无法加载定稿版本。</strong><p class="small">' + escapeHtml(error.message) + '</p></div>';
+          '<div class="callout danger"><strong>无法加载定稿版本。</strong><p class="small">' + escapeHtml(message) + '</p></div>';
+        setStatusBanner('danger', '会话刷新失败', message);
       }
     }
 
+    async function switchMode(mode) {
+      setInlineMessage('sessionComposerError', '');
+      setInlineMessage('finalizeArtifactsError', '');
+      setStatusBanner('', '正在切换模式…', '请稍候，当前会话会刷新到新的思考模式。');
+      renderModePills(mode, true);
+      document.getElementById('sessionSendButton').disabled = true;
+
+      try {
+        const response = await fetch(sessionModePath, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode })
+        });
+        const data = await readJson(response);
+        if (!response.ok) {
+          throw new Error(data.error || '无法切换模式');
+        }
+
+        applySessionData(data, { disabled: false });
+        setStatusBanner('success', '模式已切换', '当前会话已进入 ' + modeLabel(data.session.currentMode) + '。');
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '无法切换模式';
+        document.getElementById('sessionSendButton').disabled = false;
+        setStatusBanner('danger', '模式切换失败', message);
+      }
+    }
+
+    async function submitMessage(event) {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const input = document.getElementById('sessionMessageInput');
+      const content = input.value.trim();
+      if (!content) {
+        setInlineMessage('sessionComposerError', '请输入本轮要推进的内容。');
+        return;
+      }
+
+      setInlineMessage('sessionComposerError', '');
+      setStatusBanner('', '正在生成本轮输出…', '系统会把这条输入送到当前模式，并刷新时间线与右栏。');
+      document.getElementById('sessionSendButton').disabled = true;
+
+      try {
+        const response = await fetch(sessionMessagePath, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content })
+        });
+        const data = await readJson(response);
+        if (!response.ok) {
+          throw new Error(data.error || '无法发送消息');
+        }
+
+        applySessionData(data, { disabled: false });
+        form.reset();
+        updateComposerHint(data.session.currentMode);
+        input.focus();
+        setStatusBanner('success', '本轮已完成', '新的角色发言和草稿摘要已经刷新。');
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '无法发送消息';
+        document.getElementById('sessionSendButton').disabled = false;
+        setInlineMessage('sessionComposerError', message);
+        setStatusBanner('danger', '消息发送失败', message);
+      }
+    }
+
+    async function finalizeArtifacts(event) {
+      event.preventDefault();
+      const note = document.getElementById('finalizeNote').value.trim();
+      setInlineMessage('finalizeArtifactsError', '');
+      setStatusBanner('', '正在生成新版本…', '定稿不会覆盖旧版本，完成后右栏会刷新。');
+      document.getElementById('finalizeArtifactsButton').disabled = true;
+
+      try {
+        const response = await fetch(sessionFinalizePath, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ note })
+        });
+        const data = await readJson(response);
+        if (!response.ok) {
+          throw new Error(data.error || '无法定稿');
+        }
+
+        applySessionData(data, { disabled: false });
+        document.getElementById('finalizeNote').value = '';
+        setStatusBanner('success', '新版本已生成', '右栏中的已定稿版本已经更新。');
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '无法定稿';
+        syncFinalizeControls({ session: { currentMode: 'requirement-build' }, artifacts: { drafts: { placeholder: true }, finalized: {} } }, false);
+        setInlineMessage('finalizeArtifactsError', message);
+        setStatusBanner('danger', '定稿失败', message);
+      }
+    }
+
+    for (const button of document.querySelectorAll('[data-mode]')) {
+      button.addEventListener('click', () => switchMode(button.dataset.mode));
+    }
+
+    document.getElementById('sessionMessageForm').addEventListener('submit', submitMessage);
+    document.getElementById('finalizeArtifactsForm').addEventListener('submit', finalizeArtifacts);
     loadSession();
   </script>
 `);

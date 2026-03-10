@@ -28,11 +28,21 @@ const IGNORED_DIRS = new Set([
   ".turbo",
 ]);
 
+function shouldIgnoreDir(name) {
+  return (
+    IGNORED_DIRS.has(name) ||
+    name === ".worktrees" ||
+    name === ".prodmind" ||
+    name === "prodmind-project" ||
+    name.startsWith(".tmp-")
+  );
+}
+
 function walk(dir, out) {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   for (const entry of entries) {
     if (entry.isDirectory()) {
-      if (IGNORED_DIRS.has(entry.name)) continue;
+      if (shouldIgnoreDir(entry.name)) continue;
       walk(path.join(dir, entry.name), out);
       continue;
     }
@@ -77,4 +87,3 @@ if (issueCount > 0) {
 }
 
 console.log(`lint ok: scanned ${files.length} file(s) under ${root}.`);
-

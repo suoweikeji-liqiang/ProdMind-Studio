@@ -33,10 +33,12 @@ export const WorkflowResultSchema = z.object({
   challenge: z.object({
     artifactPath: z.string(),
     hypothesesCount: z.number(),
+    summary: z.any().optional(),
   }).optional(),
   decision: z.object({
     artifactPath: z.string(),
     recommendation: z.string(),
+    summary: z.any().optional(),
   }).optional(),
   assets: z.object({
     projectPath: z.string(),

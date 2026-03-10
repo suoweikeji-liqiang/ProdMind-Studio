@@ -124,6 +124,14 @@ describe('Web Happy Path', () => {
     expect(sessionHtml).toContain('草稿产物');
     expect(sessionHtml).toContain('已定稿版本');
     expect(sessionHtml).toContain('/api/sessions/session-42');
+    expect(sessionHtml).toContain('id="sessionMessageForm"');
+    expect(sessionHtml).toContain('id="sessionMessageInput"');
+    expect(sessionHtml).toContain('id="sessionComposerError"');
+    expect(sessionHtml).toContain('id="finalizeArtifactsButton"');
+    expect(sessionHtml).toContain('/api/sessions/session-42/messages');
+    expect(sessionHtml).toContain('/api/sessions/session-42/mode');
+    expect(sessionHtml).toContain('/api/sessions/session-42/artifacts/finalize');
+    expect(sessionHtml).toContain("document.getElementById('sessionSendButton').disabled = disabled;");
 
     const historyHtml = renderSessionHistoryPage();
     expect(historyHtml).toContain('会话历史');
@@ -557,7 +565,7 @@ describe('Web Session API', () => {
     });
   });
 
-  it('lists sessions by topic and last active time', async () => {
+  it.skip('lists sessions by topic and last active time', async () => {
     await withAppServer(async (baseUrl) => {
       const createResponse = await fetch(`${baseUrl}/api/sessions`, {
         method: 'POST',
@@ -582,7 +590,7 @@ describe('Web Session API', () => {
     });
   });
 
-  it('reopens a session replay with full timeline and finalized outputs', async () => {
+  it.skip('reopens a session replay with full timeline and finalized outputs', async () => {
     await withAppServer(async (baseUrl) => {
       const createResponse = await fetch(`${baseUrl}/api/sessions`, {
         method: 'POST',
@@ -656,5 +664,115 @@ describe('Web Session API', () => {
       expect(replay.legacy.run.runId).toBe('legacy-run-42');
       expect(replay.legacy.result.decision.recommendation).toBe('Keep the old record readable.');
     });
+  });
+
+  it('lists sessions by topic and last active time with fake challenge provider', async () => {
+    const previous = {
+      mode: process.env.PROVIDER_MODE,
+      type: process.env.PROVIDER_TYPE,
+      modelId: process.env.MODEL_ID,
+    };
+
+    process.env.PROVIDER_MODE = 'fake';
+    process.env.PROVIDER_TYPE = 'openai';
+    process.env.MODEL_ID = 'fake-model';
+
+    try {
+      await withAppServer(async (baseUrl) => {
+        const createResponse = await fetch(`${baseUrl}/api/sessions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ topic: 'one topic per session', projectPath: testSessionsDir }),
+        });
+        expect(createResponse.status).toBe(201);
+        const created = await readJson<any>(createResponse);
+
+        const challengeResponse = await fetch(`${baseUrl}/api/sessions/${created.session.sessionId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: 'challenge the framing', projectPath: testSessionsDir }),
+        });
+        expect(challengeResponse.status).toBe(200);
+
+        const listResponse = await fetch(`${baseUrl}/api/sessions?projectPath=${encodeURIComponent(testSessionsDir)}`);
+        expect(listResponse.status).toBe(200);
+
+        const listed = await readJson<any>(listResponse);
+        expect(Array.isArray(listed.sessions)).toBe(true);
+        expect(listed.sessions[0].topic).toBe('one topic per session');
+        expect(listed.sessions[0].lastActiveAt).toBeTruthy();
+      });
+    } finally {
+      process.env.PROVIDER_MODE = previous.mode;
+      process.env.PROVIDER_TYPE = previous.type;
+      process.env.MODEL_ID = previous.modelId;
+    }
+  });
+
+  it('reopens a session replay with full timeline and finalized outputs using fake provider', async () => {
+    const previous = {
+      mode: process.env.PROVIDER_MODE,
+      type: process.env.PROVIDER_TYPE,
+      modelId: process.env.MODEL_ID,
+    };
+
+    process.env.PROVIDER_MODE = 'fake';
+    process.env.PROVIDER_TYPE = 'openai';
+    process.env.MODEL_ID = 'fake-model';
+
+    try {
+      await withAppServer(async (baseUrl) => {
+        const createResponse = await fetch(`${baseUrl}/api/sessions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ topic: 'replay the full session', projectPath: testSessionsDir }),
+        });
+        expect(createResponse.status).toBe(201);
+        const created = await readJson<any>(createResponse);
+        const sessionId = created.session.sessionId;
+
+        const challengeResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: 'pressure test the idea', projectPath: testSessionsDir }),
+        });
+        expect(challengeResponse.status).toBe(200);
+
+        const modeResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/mode`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: 'requirement-build', projectPath: testSessionsDir }),
+        });
+        expect(modeResponse.status).toBe(200);
+
+        const draftResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: 'turn this into requirement drafts', projectPath: testSessionsDir }),
+        });
+        expect(draftResponse.status).toBe(200);
+
+        const finalizeResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/artifacts/finalize`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectPath: testSessionsDir, note: 'baseline' }),
+        });
+        expect(finalizeResponse.status).toBe(200);
+
+        const replayResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/replay?projectPath=${encodeURIComponent(testSessionsDir)}`);
+        expect(replayResponse.status).toBe(200);
+
+        const replay = await readJson<any>(replayResponse);
+        expect(replay.source).toBe('session');
+        expect(replay.session.sessionId).toBe(sessionId);
+        expect(replay.events.some((event: { type: string; }) => event.type === 'mode_switched')).toBe(true);
+        expect(replay.events.some((event: { type: string; }) => event.type === 'artifact_finalized')).toBe(true);
+        expect(replay.modeStates['requirement-build'].finalArtifacts).toContain('spec:v1');
+      });
+    } finally {
+      process.env.PROVIDER_MODE = previous.mode;
+      process.env.PROVIDER_TYPE = previous.type;
+      process.env.MODEL_ID = previous.modelId;
+    }
   });
 });

@@ -53,16 +53,16 @@ export function buildChallengeSummary(session: ChallengeSession): ChallengeSumma
     };
   }
 
-  const hypothesesMatch = lastRound.grounder.match(/##\s*当前最强假设[^\n]*\n([\s\S]*?)(?=\n##|$)/);
-  const hypotheses = hypothesesMatch?.[1]
-    ? hypothesesMatch[1]
-        .split('\n')
-        .filter(l => l.trim().match(/^\d+\./))
-        .map(l => l.replace(/^\d+\.\s*/, '').trim())
+  const hypothesesMatch = lastRound.grounder.match(/##\s*(当前最强假设|Strongest Hypotheses|Hypotheses)[^\n]*\n([\s\S]*?)(?=\n##|$)/i);
+  const hypotheses = hypothesesMatch?.[2]
+    ? hypothesesMatch[2]
+      .split('\n')
+      .filter(l => l.trim().match(/^(\d+\.|-)\s+/))
+      .map(l => l.replace(/^(\d+\.|-)\s*/, '').trim())
     : [];
 
-  const mvpMatch = lastRound.grounder.match(/##\s*MVP边界[^\n]*\n([\s\S]*?)(?=\n##|$)/);
-  const mvpBoundary = mvpMatch?.[1] ? mvpMatch[1].trim() : '';
+  const mvpMatch = lastRound.grounder.match(/##\s*(MVP边界|MVP Boundary)[^\n]*\n([\s\S]*?)(?=\n##|$)/i);
+  const mvpBoundary = mvpMatch?.[2] ? mvpMatch[2].trim() : '';
 
   const allConflicts = session.rounds.flatMap(r => r.conflicts ?? []);
 
