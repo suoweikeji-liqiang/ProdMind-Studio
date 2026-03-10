@@ -1,4 +1,39 @@
-import { describe, it, expect } from 'vitest';
+import { rmSync, existsSync } from 'node:fs';
+import path from 'node:path';
+import type { Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { afterEach, describe, it, expect } from 'vitest';
+
+const testSessionsDir = path.join(process.cwd(), '.test-web-sessions');
+
+afterEach(() => {
+  if (existsSync(testSessionsDir)) {
+    rmSync(testSessionsDir, { recursive: true, force: true });
+  }
+});
+
+async function withAppServer(run: (baseUrl: string) => Promise<void>) {
+  const { createApp } = await import('../src/server.js');
+  const app = createApp();
+  const server = await new Promise<Server>((resolve) => {
+    const instance = app.listen(0, () => resolve(instance));
+  });
+
+  try {
+    const address = server.address() as AddressInfo;
+    await run(`http://127.0.0.1:${address.port}`);
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    });
+  }
+}
 
 describe('Web Happy Path', () => {
   it('should have workflow router exported', async () => {
@@ -169,5 +204,81 @@ describe('Web Happy Path', () => {
     expect(html).toContain('Route:</strong>');
     expect(html).toContain('Failure Stage:</strong> primary');
     expect(html).toContain('Policy:</strong> timeout=5000ms');
+  });
+});
+
+describe('Web Session API', () => {
+  it('creates and retrieves a topic-first session', async () => {
+    await withAppServer(async (baseUrl) => {
+      const createResponse = await fetch(`${baseUrl}/api/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic: 'Design a conversation-first product shell', projectPath: testSessionsDir }),
+      });
+
+      expect(createResponse.status).toBe(201);
+      const created = await createResponse.json();
+      expect(created.session.topic).toBe('Design a conversation-first product shell');
+      expect(created.session.currentMode).toBe('challenge');
+
+      const getResponse = await fetch(`${baseUrl}/api/sessions/${created.session.sessionId}`);
+      expect(getResponse.status).toBe(200);
+      const loaded = await getResponse.json();
+
+      expect(loaded.session.sessionId).toBe(created.session.sessionId);
+      expect(loaded.session.currentMode).toBe('challenge');
+    });
+  });
+
+  it('switches the active mode persistently', async () => {
+    await withAppServer(async (baseUrl) => {
+      const createResponse = await fetch(`${baseUrl}/api/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic: 'Compare challenge and decision mode', projectPath: testSessionsDir }),
+      });
+      const created = await createResponse.json();
+
+      const switchResponse = await fetch(`${baseUrl}/api/sessions/${created.session.sessionId}/mode`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'decision', projectPath: testSessionsDir }),
+      });
+
+      expect(switchResponse.status).toBe(200);
+      const updated = await switchResponse.json();
+      expect(updated.session.currentMode).toBe('decision');
+
+      const getResponse = await fetch(`${baseUrl}/api/sessions/${created.session.sessionId}`);
+      const loaded = await getResponse.json();
+      expect(loaded.session.currentMode).toBe('decision');
+    });
+  });
+
+  it('appends user messages to the currently active mode', async () => {
+    await withAppServer(async (baseUrl) => {
+      const createResponse = await fetch(`${baseUrl}/api/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic: 'Pressure-test session message persistence', projectPath: testSessionsDir }),
+      });
+      const created = await createResponse.json();
+
+      const messageResponse = await fetch(`${baseUrl}/api/sessions/${created.session.sessionId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: 'Challenge this assumption set.', projectPath: testSessionsDir }),
+      });
+
+      expect(messageResponse.status).toBe(202);
+      const accepted = await messageResponse.json();
+      expect(accepted.event.type).toBe('user_message');
+      expect(accepted.event.mode).toBe('challenge');
+
+      const getResponse = await fetch(`${baseUrl}/api/sessions/${created.session.sessionId}`);
+      const loaded = await getResponse.json();
+      expect(loaded.modeState.messages).toHaveLength(1);
+      expect(loaded.modeState.messages[0].content).toBe('Challenge this assumption set.');
+    });
   });
 });
