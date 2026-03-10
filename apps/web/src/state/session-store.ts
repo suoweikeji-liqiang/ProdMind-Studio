@@ -3,11 +3,13 @@ import type {
   ConversationEvent,
   ConversationMode,
   ConversationSession,
+  DraftSummary,
   ModeMessage,
   ModeState,
+  RoleIdentity,
 } from '@prodmind/shared-types';
 
-interface LiveSessionState {
+export interface LiveSessionState {
   session: ConversationSession;
   modeStates: Partial<Record<ConversationMode, ModeState>>;
 }
@@ -164,4 +166,75 @@ export async function appendLiveUserMessage(projectPath: string, sessionId: stri
 
   liveSessions.set(sessionId, existing);
   return { state: existing, event };
+}
+
+export async function appendLiveRoleMessages(
+  projectPath: string,
+  sessionId: string,
+  messages: ModeMessage[],
+  options: {
+    roleSet?: RoleIdentity[];
+    draftSummary?: DraftSummary;
+  } = {}
+): Promise<{ state: LiveSessionState; events: ConversationEvent[] } | null> {
+  const existing = await getLiveSession(projectPath, sessionId);
+  if (!existing) {
+    return null;
+  }
+
+  const mode = existing.session.currentMode;
+  const modeState = existing.modeStates[mode] ?? createEmptyModeState(mode);
+  const updatedModeState: ModeState = {
+    ...modeState,
+    roleSet: options.roleSet ?? modeState.roleSet,
+    draftSummary: options.draftSummary ?? modeState.draftSummary,
+    messages: [...modeState.messages, ...messages],
+  };
+
+  const timestamp = nowIso();
+  const updatedSession: ConversationSession = {
+    ...existing.session,
+    updatedAt: timestamp,
+    lastActiveAt: timestamp,
+  };
+
+  const roleEvents: ConversationEvent[] = messages
+    .filter(message => message.speaker === 'role' && message.roleId && message.roleName)
+    .map((message, index) => ({
+      type: 'role_message' as const,
+      eventId: `${sessionId}-role-${Date.now()}-${index}`,
+      sessionId,
+      mode,
+      timestamp: message.timestamp,
+      roleId: message.roleId!,
+      roleName: message.roleName!,
+      content: message.content,
+    }));
+
+  const draftEvent = options.draftSummary
+    ? [{
+        type: 'draft_updated' as const,
+        eventId: `${sessionId}-draft-${Date.now()}`,
+        sessionId,
+        mode,
+        timestamp,
+        summary: options.draftSummary.summary,
+      }]
+    : [];
+
+  existing.session = updatedSession;
+  existing.modeStates[mode] = updatedModeState;
+
+  await persistence.saveSession(projectPath, updatedSession);
+  await persistence.saveModeState(projectPath, sessionId, updatedModeState);
+
+  for (const event of [...roleEvents, ...draftEvent]) {
+    await persistence.appendEvent(projectPath, event);
+  }
+
+  liveSessions.set(sessionId, existing);
+  return {
+    state: existing,
+    events: [...roleEvents, ...draftEvent],
+  };
 }

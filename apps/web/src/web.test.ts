@@ -316,7 +316,7 @@ describe('Web Session API', () => {
     });
   });
 
-  it('appends user messages to the currently active mode', async () => {
+  it('appends user messages when the active mode does not trigger challenge execution', async () => {
     await withAppServer(async (baseUrl) => {
       const createResponse = await fetch(`${baseUrl}/api/sessions`, {
         method: 'POST',
@@ -324,6 +324,12 @@ describe('Web Session API', () => {
         body: JSON.stringify({ topic: 'Pressure-test session message persistence', projectPath: testSessionsDir }),
       });
       const created = await createResponse.json();
+
+      await fetch(`${baseUrl}/api/sessions/${created.session.sessionId}/mode`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'decision', projectPath: testSessionsDir }),
+      });
 
       const messageResponse = await fetch(`${baseUrl}/api/sessions/${created.session.sessionId}/messages`, {
         method: 'POST',
@@ -334,12 +340,71 @@ describe('Web Session API', () => {
       expect(messageResponse.status).toBe(202);
       const accepted = await messageResponse.json();
       expect(accepted.event.type).toBe('user_message');
-      expect(accepted.event.mode).toBe('challenge');
+      expect(accepted.event.mode).toBe('decision');
 
       const getResponse = await fetch(`${baseUrl}/api/sessions/${created.session.sessionId}`);
       const loaded = await getResponse.json();
       expect(loaded.modeState.messages).toHaveLength(1);
       expect(loaded.modeState.messages[0].content).toBe('Challenge this assumption set.');
     });
+  });
+
+  it('runs repeated visible challenge rounds inside one session', async () => {
+    const previous = {
+      mode: process.env.PROVIDER_MODE,
+      type: process.env.PROVIDER_TYPE,
+      modelId: process.env.MODEL_ID,
+    };
+
+    process.env.PROVIDER_MODE = 'fake';
+    process.env.PROVIDER_TYPE = 'openai';
+    process.env.MODEL_ID = 'fake-model';
+
+    try {
+      await withAppServer(async (baseUrl) => {
+        const createResponse = await fetch(`${baseUrl}/api/sessions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ topic: '把 CLI V1 迁移为中文 Web 思维工具', projectPath: testSessionsDir }),
+        });
+        const created = await createResponse.json();
+        const sessionId = created.session.sessionId;
+
+        const firstTurnResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: '先帮我拆一下这个议题。', projectPath: testSessionsDir }),
+        });
+
+        expect(firstTurnResponse.status).toBe(200);
+        const firstTurn = await firstTurnResponse.json();
+        expect(firstTurn.modeState.roleSet).toEqual([
+          { roleId: 'architect', roleName: '架构师' },
+          { roleId: 'assassin', roleName: '刺客' },
+          { roleId: 'userGhost', roleName: '用户幽灵' },
+          { roleId: 'grounder', roleName: '锚点官' },
+        ]);
+        expect(firstTurn.modeState.messages.filter((message: { speaker: string; }) => message.speaker === 'user')).toHaveLength(1);
+        expect(firstTurn.modeState.messages.filter((message: { speaker: string; }) => message.speaker === 'role')).toHaveLength(4);
+        expect(firstTurn.modeState.draftSummary.summary).toContain('第 1 轮');
+
+        const secondTurnResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: '用户其实主要是产品经理，不是开发。', projectPath: testSessionsDir }),
+        });
+
+        expect(secondTurnResponse.status).toBe(200);
+        const secondTurn = await secondTurnResponse.json();
+        expect(secondTurn.modeState.messages.filter((message: { speaker: string; }) => message.speaker === 'user')).toHaveLength(2);
+        expect(secondTurn.modeState.messages.filter((message: { speaker: string; }) => message.speaker === 'role')).toHaveLength(8);
+        expect(secondTurn.modeState.draftSummary.summary).toContain('第 2 轮');
+        expect(secondTurn.modeState.messages.some((message: { roleName?: string; }) => message.roleName === '架构师')).toBe(true);
+      });
+    } finally {
+      process.env.PROVIDER_MODE = previous.mode;
+      process.env.PROVIDER_TYPE = previous.type;
+      process.env.MODEL_ID = previous.modelId;
+    }
   });
 });
