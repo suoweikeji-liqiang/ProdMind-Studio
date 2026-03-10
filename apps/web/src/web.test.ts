@@ -35,6 +35,10 @@ async function withAppServer(run: (baseUrl: string) => Promise<void>) {
   }
 }
 
+async function readJson<T>(response: { json(): Promise<unknown> }): Promise<T> {
+  return response.json() as Promise<T>;
+}
+
 describe('Web Happy Path', () => {
   it('should have workflow router exported', async () => {
     const { workflowRouter } = await import('../src/routes/workflow.js');
@@ -288,13 +292,13 @@ describe('Web Session API', () => {
       });
 
       expect(createResponse.status).toBe(201);
-      const created = await createResponse.json();
+      const created = await readJson<any>(createResponse);
       expect(created.session.topic).toBe('Design a conversation-first product shell');
       expect(created.session.currentMode).toBe('challenge');
 
       const getResponse = await fetch(`${baseUrl}/api/sessions/${created.session.sessionId}`);
       expect(getResponse.status).toBe(200);
-      const loaded = await getResponse.json();
+      const loaded = await readJson<any>(getResponse);
 
       expect(loaded.session.sessionId).toBe(created.session.sessionId);
       expect(loaded.session.currentMode).toBe('challenge');
@@ -308,7 +312,7 @@ describe('Web Session API', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ topic: 'Compare challenge and decision mode', projectPath: testSessionsDir }),
       });
-      const created = await createResponse.json();
+      const created = await readJson<any>(createResponse);
 
       const switchResponse = await fetch(`${baseUrl}/api/sessions/${created.session.sessionId}/mode`, {
         method: 'POST',
@@ -317,11 +321,11 @@ describe('Web Session API', () => {
       });
 
       expect(switchResponse.status).toBe(200);
-      const updated = await switchResponse.json();
+      const updated = await readJson<any>(switchResponse);
       expect(updated.session.currentMode).toBe('decision');
 
       const getResponse = await fetch(`${baseUrl}/api/sessions/${created.session.sessionId}`);
-      const loaded = await getResponse.json();
+      const loaded = await readJson<any>(getResponse);
       expect(loaded.session.currentMode).toBe('decision');
     });
   });
@@ -333,7 +337,7 @@ describe('Web Session API', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ topic: 'Pressure-test session message persistence', projectPath: testSessionsDir }),
       });
-      const created = await createResponse.json();
+      const created = await readJson<any>(createResponse);
 
       await fetch(`${baseUrl}/api/sessions/${created.session.sessionId}/mode`, {
         method: 'POST',
@@ -348,14 +352,14 @@ describe('Web Session API', () => {
       });
 
       expect(messageResponse.status).toBe(200);
-      const accepted = await messageResponse.json();
+      const accepted = await readJson<any>(messageResponse);
       expect(accepted.event.type).toBe('user_message');
       expect(accepted.event.mode).toBe('requirement-build');
       expect(accepted.modeState.draftArtifacts).toEqual(['idea', 'spec', 'acceptance', 'tasks']);
       expect(accepted.artifacts.drafts.idea.content).toContain('# Idea');
 
       const getResponse = await fetch(`${baseUrl}/api/sessions/${created.session.sessionId}`);
-      const loaded = await getResponse.json();
+      const loaded = await readJson<any>(getResponse);
       expect(loaded.modeState.messages).toHaveLength(5);
       expect(loaded.modeState.messages[0].content).toBe('Challenge this assumption set.');
     });
@@ -379,7 +383,7 @@ describe('Web Session API', () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ topic: '把 CLI V1 迁移为中文 Web 思维工具', projectPath: testSessionsDir }),
         });
-        const created = await createResponse.json();
+        const created = await readJson<any>(createResponse);
         const sessionId = created.session.sessionId;
 
         const firstTurnResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
@@ -389,7 +393,7 @@ describe('Web Session API', () => {
         });
 
         expect(firstTurnResponse.status).toBe(200);
-        const firstTurn = await firstTurnResponse.json();
+        const firstTurn = await readJson<any>(firstTurnResponse);
         expect(firstTurn.modeState.roleSet).toEqual([
           { roleId: 'architect', roleName: '架构师' },
           { roleId: 'assassin', roleName: '刺客' },
@@ -407,7 +411,7 @@ describe('Web Session API', () => {
         });
 
         expect(secondTurnResponse.status).toBe(200);
-        const secondTurn = await secondTurnResponse.json();
+        const secondTurn = await readJson<any>(secondTurnResponse);
         expect(secondTurn.modeState.messages.filter((message: { speaker: string; }) => message.speaker === 'user')).toHaveLength(2);
         expect(secondTurn.modeState.messages.filter((message: { speaker: string; }) => message.speaker === 'role')).toHaveLength(8);
         expect(secondTurn.modeState.draftSummary.summary).toContain('第 2 轮');
@@ -438,7 +442,7 @@ describe('Web Session API', () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ topic: '在一个会话里切换 challenge 和 decision', projectPath: testSessionsDir }),
         });
-        const created = await createResponse.json();
+        const created = await readJson<any>(createResponse);
         const sessionId = created.session.sessionId;
 
         await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
@@ -461,7 +465,7 @@ describe('Web Session API', () => {
         });
 
         expect(decisionResponse.status).toBe(200);
-        const decisionTurn = await decisionResponse.json();
+        const decisionTurn = await readJson<any>(decisionResponse);
         expect(decisionTurn.modeState.mode).toBe('decision');
         expect(decisionTurn.modeState.roleSet).toEqual([
           { roleId: 'solution', roleName: '方案官' },
@@ -480,7 +484,7 @@ describe('Web Session API', () => {
         });
 
         const challengeResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}`);
-        const challengeState = await challengeResponse.json();
+        const challengeState = await readJson<any>(challengeResponse);
         expect(challengeState.modeState.mode).toBe('challenge');
         expect(challengeState.modeState.messages.filter((message: { speaker: string; }) => message.speaker === 'user')).toHaveLength(1);
         expect(challengeState.modeState.messages.filter((message: { speaker: string; }) => message.speaker === 'role')).toHaveLength(4);
@@ -499,7 +503,7 @@ describe('Web Session API', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ topic: '把当前讨论沉淀成需求资产', projectPath: testSessionsDir }),
       });
-      const created = await createResponse.json();
+      const created = await readJson<any>(createResponse);
       const sessionId = created.session.sessionId;
 
       await fetch(`${baseUrl}/api/sessions/${sessionId}/mode`, {
@@ -515,7 +519,7 @@ describe('Web Session API', () => {
       });
 
       expect(draftResponse.status).toBe(200);
-      const draftResult = await draftResponse.json();
+      const draftResult = await readJson<any>(draftResponse);
       expect(draftResult.modeState.mode).toBe('requirement-build');
       expect(draftResult.modeState.draftArtifacts).toEqual(['idea', 'spec', 'acceptance', 'tasks']);
       expect(draftResult.artifacts.drafts.spec.content).toContain('# Spec');
@@ -528,7 +532,7 @@ describe('Web Session API', () => {
       });
 
       expect(finalizeResponse.status).toBe(200);
-      const finalized = await finalizeResponse.json();
+      const finalized = await readJson<any>(finalizeResponse);
       expect(finalized.modeState.finalArtifacts).toContain('spec:v1');
       expect(finalized.artifacts.finalized.spec[0].version).toBe(1);
 
@@ -545,7 +549,7 @@ describe('Web Session API', () => {
       });
 
       expect(finalizeAgainResponse.status).toBe(200);
-      const finalizedAgain = await finalizeAgainResponse.json();
+      const finalizedAgain = await readJson<any>(finalizeAgainResponse);
       expect(finalizedAgain.artifacts.finalized.spec.map((item: { version: number; }) => item.version)).toEqual([1, 2]);
       expect(finalizedAgain.artifacts.finalized.spec[0].note).toBe('baseline');
       expect(finalizedAgain.artifacts.finalized.spec[1].note).toBe('expanded');
@@ -560,7 +564,7 @@ describe('Web Session API', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ topic: '一个议题对应一个会话', projectPath: testSessionsDir }),
       });
-      const created = await createResponse.json();
+      const created = await readJson<any>(createResponse);
 
       await fetch(`${baseUrl}/api/sessions/${created.session.sessionId}/messages`, {
         method: 'POST',
@@ -571,7 +575,7 @@ describe('Web Session API', () => {
       const listResponse = await fetch(`${baseUrl}/api/sessions?projectPath=${encodeURIComponent(testSessionsDir)}`);
 
       expect(listResponse.status).toBe(200);
-      const listed = await listResponse.json();
+      const listed = await readJson<any>(listResponse);
       expect(Array.isArray(listed.sessions)).toBe(true);
       expect(listed.sessions[0].topic).toBe('一个议题对应一个会话');
       expect(listed.sessions[0].lastActiveAt).toBeTruthy();
@@ -585,7 +589,7 @@ describe('Web Session API', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ topic: '回放完整会话过程', projectPath: testSessionsDir }),
       });
-      const created = await createResponse.json();
+      const created = await readJson<any>(createResponse);
       const sessionId = created.session.sessionId;
 
       await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
@@ -612,7 +616,7 @@ describe('Web Session API', () => {
       const replayResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/replay?projectPath=${encodeURIComponent(testSessionsDir)}`);
 
       expect(replayResponse.status).toBe(200);
-      const replay = await replayResponse.json();
+      const replay = await readJson<any>(replayResponse);
       expect(replay.source).toBe('session');
       expect(replay.session.sessionId).toBe(sessionId);
       expect(replay.events.some((event: { type: string; }) => event.type === 'mode_switched')).toBe(true);
@@ -647,7 +651,7 @@ describe('Web Session API', () => {
       const replayResponse = await fetch(`${baseUrl}/api/sessions/legacy-run-42/replay?projectPath=${encodeURIComponent(testSessionsDir)}`);
 
       expect(replayResponse.status).toBe(200);
-      const replay = await replayResponse.json();
+      const replay = await readJson<any>(replayResponse);
       expect(replay.source).toBe('legacy-workflow');
       expect(replay.legacy.run.runId).toBe('legacy-run-42');
       expect(replay.legacy.result.decision.recommendation).toBe('Keep the old record readable.');

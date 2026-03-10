@@ -1,4 +1,5 @@
 import express from 'express';
+import type { Express } from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadEnvFiles } from './config.js';
@@ -15,7 +16,7 @@ import {
   renderWorkflow,
 } from './views/index.js';
 
-export function createApp() {
+export function createApp(): Express {
   loadEnvFiles();
 
   const app = express();
