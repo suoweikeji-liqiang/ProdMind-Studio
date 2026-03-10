@@ -124,10 +124,12 @@ describe('Web Happy Path', () => {
     const historyHtml = renderSessionHistoryPage();
     expect(historyHtml).toContain('会话历史');
     expect(historyHtml).toContain('按议题回看');
+    expect(historyHtml).toContain('/api/sessions');
 
     const replayHtml = renderSessionReplayPage('session-42');
     expect(replayHtml).toContain('会话回放');
     expect(replayHtml).toContain('session-42');
+    expect(replayHtml).toContain('/api/sessions/session-42/replay');
   });
 
   it('should render provider summary block', async () => {
@@ -265,11 +267,13 @@ describe('Web Session Shell', () => {
       const historyHtml = await historyResponse.text();
       expect(historyResponse.status).toBe(200);
       expect(historyHtml).toContain('会话历史');
+      expect(historyHtml).toContain('/api/sessions');
 
       const replayResponse = await fetch(`${baseUrl}/sessions/session-123/replay`);
       const replayHtml = await replayResponse.text();
       expect(replayResponse.status).toBe(200);
       expect(replayHtml).toContain('会话回放');
+      expect(replayHtml).toContain('/api/sessions/session-123/replay');
     });
   });
 });
@@ -546,6 +550,107 @@ describe('Web Session API', () => {
       expect(finalizedAgain.artifacts.finalized.spec[0].note).toBe('baseline');
       expect(finalizedAgain.artifacts.finalized.spec[1].note).toBe('expanded');
       expect(finalizedAgain.artifacts.drafts.tasks.content).toContain('# Tasks');
+    });
+  });
+
+  it('lists sessions by topic and last active time', async () => {
+    await withAppServer(async (baseUrl) => {
+      const createResponse = await fetch(`${baseUrl}/api/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic: '一个议题对应一个会话', projectPath: testSessionsDir }),
+      });
+      const created = await createResponse.json();
+
+      await fetch(`${baseUrl}/api/sessions/${created.session.sessionId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: '先做一轮 challenge。', projectPath: testSessionsDir }),
+      });
+
+      const listResponse = await fetch(`${baseUrl}/api/sessions?projectPath=${encodeURIComponent(testSessionsDir)}`);
+
+      expect(listResponse.status).toBe(200);
+      const listed = await listResponse.json();
+      expect(Array.isArray(listed.sessions)).toBe(true);
+      expect(listed.sessions[0].topic).toBe('一个议题对应一个会话');
+      expect(listed.sessions[0].lastActiveAt).toBeTruthy();
+    });
+  });
+
+  it('reopens a session replay with full timeline and finalized outputs', async () => {
+    await withAppServer(async (baseUrl) => {
+      const createResponse = await fetch(`${baseUrl}/api/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic: '回放完整会话过程', projectPath: testSessionsDir }),
+      });
+      const created = await createResponse.json();
+      const sessionId = created.session.sessionId;
+
+      await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: '先挑战这个议题。', projectPath: testSessionsDir }),
+      });
+      await fetch(`${baseUrl}/api/sessions/${sessionId}/mode`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'requirement-build', projectPath: testSessionsDir }),
+      });
+      await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: '整理成需求草稿。', projectPath: testSessionsDir }),
+      });
+      await fetch(`${baseUrl}/api/sessions/${sessionId}/artifacts/finalize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectPath: testSessionsDir, note: 'baseline' }),
+      });
+
+      const replayResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/replay?projectPath=${encodeURIComponent(testSessionsDir)}`);
+
+      expect(replayResponse.status).toBe(200);
+      const replay = await replayResponse.json();
+      expect(replay.source).toBe('session');
+      expect(replay.session.sessionId).toBe(sessionId);
+      expect(replay.events.some((event: { type: string; }) => event.type === 'mode_switched')).toBe(true);
+      expect(replay.events.some((event: { type: string; }) => event.type === 'artifact_finalized')).toBe(true);
+      expect(replay.modeStates['requirement-build'].finalArtifacts).toContain('spec:v1');
+    });
+  });
+
+  it('falls back to legacy workflow history when replaying pre-migration records', async () => {
+    const { createHistoryStore } = await import('@prodmind/asset-engine');
+    const historyStore = createHistoryStore();
+    await historyStore.saveRun(testSessionsDir, {
+      runId: 'legacy-run-42',
+      idea: 'Legacy workflow record',
+      status: 'completed',
+      startedAt: '2026-03-10T00:00:00.000Z',
+      completedAt: '2026-03-10T00:01:00.000Z',
+      phases: [
+        { phase: 'challenge', status: 'completed', durationMs: 1000 },
+        { phase: 'decision', status: 'completed', durationMs: 1000 },
+        { phase: 'asset', status: 'completed', durationMs: 1000 },
+      ],
+    });
+    await historyStore.saveResult(testSessionsDir, {
+      runId: 'legacy-run-42',
+      challenge: { artifactPath: 'challenge.md', hypothesesCount: 2 },
+      decision: { artifactPath: 'assets/decision.json', recommendation: 'Keep the old record readable.' },
+      assets: { projectPath: testSessionsDir, files: ['challenge.md', 'assets/decision.json'] },
+    });
+
+    await withAppServer(async (baseUrl) => {
+      const replayResponse = await fetch(`${baseUrl}/api/sessions/legacy-run-42/replay?projectPath=${encodeURIComponent(testSessionsDir)}`);
+
+      expect(replayResponse.status).toBe(200);
+      const replay = await replayResponse.json();
+      expect(replay.source).toBe('legacy-workflow');
+      expect(replay.legacy.run.runId).toBe('legacy-run-42');
+      expect(replay.legacy.result.decision.recommendation).toBe('Keep the old record readable.');
     });
   });
 });

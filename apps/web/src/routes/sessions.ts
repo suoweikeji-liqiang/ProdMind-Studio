@@ -4,7 +4,7 @@ import path from 'node:path';
 import { runChallengeRound } from '@prodmind/challenge-engine';
 import { buildDecisionModeOutput, createDecisionSession, runDecisionOrchestration } from '@prodmind/decision-engine';
 import { createRuntimeAdapter } from '@prodmind/llm-adapter';
-import { createProjectStore, createSessionStore, writeRequirementDraftPack } from '@prodmind/asset-engine';
+import { createHistoryStore, createProjectStore, createSessionStore, writeRequirementDraftPack } from '@prodmind/asset-engine';
 import type { ArtifactVersion, ModeMessage, ModeState, ProjectState, RoleIdentity } from '@prodmind/shared-types';
 import { ConversationModeSchema } from '@prodmind/shared-types';
 import { loadProviderConfig } from '../config.js';
@@ -245,6 +245,39 @@ async function loadModeArtifacts(projectPath: string, sessionId: string, mode: M
   };
 }
 
+async function loadReplayArtifacts(projectPath: string, sessionId: string) {
+  return {
+    'requirement-build': await loadModeArtifacts(projectPath, sessionId, 'requirement-build'),
+  };
+}
+
+async function buildReplayPayload(projectPath: string, sessionId: string) {
+  const state = await getLiveSession(projectPath, sessionId);
+  if (state) {
+    return {
+      source: 'session' as const,
+      session: state.session,
+      events: await sessionPersistence.listEvents(projectPath, sessionId),
+      modeStates: state.modeStates,
+      artifacts: await loadReplayArtifacts(projectPath, sessionId),
+    };
+  }
+
+  const historyStore = createHistoryStore();
+  const legacyRun = await historyStore.getRun(projectPath, sessionId);
+  if (!legacyRun) {
+    return null;
+  }
+
+  return {
+    source: 'legacy-workflow' as const,
+    legacy: {
+      run: legacyRun,
+      result: await historyStore.getResult(projectPath, sessionId),
+    },
+  };
+}
+
 sessionsRouter.post('/', async (req: Request, res: Response) => {
   const { topic, projectPath = './prodmind-project' } = req.body;
   if (!topic) {
@@ -256,6 +289,13 @@ sessionsRouter.post('/', async (req: Request, res: Response) => {
     session: state.session,
     modeState: state.modeStates[state.session.currentMode] ?? null,
   });
+});
+
+sessionsRouter.get('/', async (req: Request, res: Response) => {
+  const projectPath = (req.query.projectPath as string) || './prodmind-project';
+  const sessions = await sessionPersistence.listSessions(projectPath);
+
+  return res.json({ sessions });
 });
 
 sessionsRouter.get('/:id', async (req: Request, res: Response) => {
@@ -275,6 +315,21 @@ sessionsRouter.get('/:id', async (req: Request, res: Response) => {
     modeState: state.modeStates[state.session.currentMode] ?? null,
     artifacts: await loadModeArtifacts(projectPath, id, state.session.currentMode),
   });
+});
+
+sessionsRouter.get('/:id/replay', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const projectPath = (req.query.projectPath as string) || './prodmind-project';
+  if (!id) {
+    return res.status(400).json({ error: 'Session ID required' });
+  }
+
+  const replay = await buildReplayPayload(projectPath, id);
+  if (!replay) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+
+  return res.json(replay);
 });
 
 sessionsRouter.post('/:id/mode', async (req: Request, res: Response) => {

@@ -530,14 +530,49 @@ export const renderSessionHistoryPage = () => layout('Sessions', `
   <section class="section-header">
     <div class="eyebrow">按议题回看</div>
     <h1>会话历史</h1>
-    <p>后续这里会按议题、最近活跃时间和各模式沉淀状态组织历史，而不是按 workflow run 组织。</p>
+    <p>按议题、最近活跃时间和当前模式查看会话，而不是按 workflow run 组织。</p>
   </section>
   <section class="card">
-    <div class="empty">
-      <strong>新的会话历史壳层已经就位。</strong>
-      <p class="small">会话历史 API 会在 session 语义迁移完成后接入。旧版 workflow 历史暂时仍保留在兼容入口中。</p>
-    </div>
+    <div id="sessionHistoryList" class="empty">正在加载会话历史...</div>
   </section>
+  <script>
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
+
+    function renderSessionItems(items) {
+      if (!Array.isArray(items) || items.length === 0) {
+        return '<div class="empty"><strong>还没有会话历史。</strong><p class="small">先从首页输入一个严肃议题，再进入会话。</p></div>';
+      }
+
+      return items.map((item) => (
+        '<article class="result-section">' +
+          '<h3><a href="/sessions/' + encodeURIComponent(item.sessionId) + '">' + escapeHtml(item.topic) + '</a></h3>' +
+          '<p><strong>最近活跃：</strong>' + escapeHtml(item.lastActiveAt) + '</p>' +
+          '<p><strong>当前模式：</strong>' + escapeHtml(item.currentMode) + '</p>' +
+          '<p><a href="/sessions/' + encodeURIComponent(item.sessionId) + '/replay">打开回放</a></p>' +
+        '</article>'
+      )).join('');
+    }
+
+    async function loadSessionHistory() {
+      try {
+        const response = await fetch('/api/sessions');
+        const data = await response.json();
+        document.getElementById('sessionHistoryList').innerHTML = renderSessionItems(data.sessions);
+      } catch (error) {
+        document.getElementById('sessionHistoryList').innerHTML =
+          '<div class="callout danger"><strong>无法加载会话历史。</strong><p class="small">' + escapeHtml(error.message) + '</p></div>';
+      }
+    }
+
+    loadSessionHistory();
+  </script>
 `);
 
 export const renderSessionReplayPage = (sessionId: string) => layout('Replay', `
@@ -546,12 +581,116 @@ export const renderSessionReplayPage = (sessionId: string) => layout('Replay', `
     <h1>会话回放</h1>
     <p>Session ID: <code>${escapeHtml(sessionId)}</code></p>
   </section>
-  <section class="card">
-    <div class="empty">
-      <strong>这里会回放完整过程。</strong>
-      <p class="small">包括模式切换、角色发言、草稿更新和定稿节点。当前先把页面语义切换到 session/replay。</p>
+  <section class="grid">
+    <div class="card">
+      <h2>回放概览</h2>
+      <div id="replayMeta" class="empty">正在加载回放...</div>
+    </div>
+    <div class="card">
+      <h2>定稿产物</h2>
+      <div id="replayArtifacts" class="empty">正在加载定稿产物...</div>
     </div>
   </section>
+  <section class="card section">
+    <h2>事件时间线</h2>
+    <div id="replayTimeline" class="timeline">
+      <div class="timeline-item">
+        <strong>正在加载</strong>
+        <span class="microcopy">这里会显示模式切换、角色发言、草稿更新和定稿节点。</span>
+      </div>
+    </div>
+  </section>
+  <script>
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
+
+    function renderReplayEvents(events) {
+      if (!Array.isArray(events) || events.length === 0) {
+        return '<div class="empty">当前会话还没有可回放的事件。</div>';
+      }
+
+      return events.map((event) => {
+        if (event.type === 'mode_switched') {
+          return '<div class="timeline-item"><strong>模式切换</strong><div>' + escapeHtml(event.fromMode + ' -> ' + event.toMode) + '</div></div>';
+        }
+        if (event.type === 'artifact_finalized') {
+          return '<div class="timeline-item"><strong>产物定稿</strong><div>' + escapeHtml(event.artifactType) + ' v' + escapeHtml(event.version) + '</div></div>';
+        }
+        if (event.type === 'role_message') {
+          return '<div class="timeline-item"><strong>' + escapeHtml(event.roleName) + '</strong><div>' + escapeHtml(event.content) + '</div></div>';
+        }
+        if (event.type === 'draft_updated') {
+          return '<div class="timeline-item"><strong>草稿更新</strong><div>' + escapeHtml(event.summary) + '</div></div>';
+        }
+        return '<div class="timeline-item"><strong>用户消息</strong><div>' + escapeHtml(event.content || '') + '</div></div>';
+      }).join('');
+    }
+
+    function renderReplayArtifacts(artifacts) {
+      const requirementArtifacts = artifacts && artifacts['requirement-build'];
+      const finalized = requirementArtifacts && requirementArtifacts.finalized;
+      const entries = Object.entries(finalized || {}).filter(([, versions]) => Array.isArray(versions) && versions.length > 0);
+      if (entries.length === 0) {
+        return '<div class="empty">当前回放还没有定稿产物。</div>';
+      }
+
+      return entries.map(([artifactType, versions]) => (
+        '<div class="timeline-item">' +
+          '<strong>' + escapeHtml(artifactType) + '</strong>' +
+          '<div>' + versions.map((version) => '<div>v' + escapeHtml(version.version) + (version.note ? ' · ' + escapeHtml(version.note) : '') + '</div>').join('') + '</div>' +
+        '</div>'
+      )).join('');
+    }
+
+    function renderLegacyReplay(legacy) {
+      document.getElementById('replayMeta').innerHTML =
+        '<div class="timeline-item"><strong>兼容旧版 workflow 记录</strong><div>' + escapeHtml(legacy.run.idea) + '</div></div>';
+      document.getElementById('replayTimeline').innerHTML =
+        '<div class="timeline-item"><strong>Legacy Workflow</strong><div>' + escapeHtml(legacy.run.status) + '</div></div>';
+      document.getElementById('replayArtifacts').innerHTML =
+        legacy.result && legacy.result.decision
+          ? '<div class="timeline-item"><strong>Recommendation</strong><div>' + escapeHtml(legacy.result.decision.recommendation) + '</div></div>'
+          : '<div class="empty">旧记录里没有额外结果。</div>';
+    }
+
+    async function loadReplay() {
+      try {
+        const response = await fetch('/api/sessions/${escapeHtml(sessionId)}/replay');
+        const data = await response.json();
+        if (!response.ok) {
+          document.getElementById('replayMeta').innerHTML =
+            '<div class="callout danger"><strong>无法加载回放。</strong><p class="small">' + escapeHtml(data.error || 'Unknown error') + '</p></div>';
+          return;
+        }
+
+        if (data.source === 'legacy-workflow') {
+          renderLegacyReplay(data.legacy);
+          return;
+        }
+
+        document.getElementById('replayMeta').innerHTML =
+          '<div class="timeline-item"><strong>议题</strong><div>' + escapeHtml(data.session.topic) + '</div></div>' +
+          '<div class="timeline-item"><strong>最近活跃</strong><div>' + escapeHtml(data.session.lastActiveAt) + '</div></div>';
+        document.getElementById('replayTimeline').innerHTML = renderReplayEvents(data.events);
+        document.getElementById('replayArtifacts').innerHTML = renderReplayArtifacts(data.artifacts);
+      } catch (error) {
+        document.getElementById('replayMeta').innerHTML =
+          '<div class="callout danger"><strong>无法加载回放。</strong><p class="small">' + escapeHtml(error.message) + '</p></div>';
+        document.getElementById('replayTimeline').innerHTML =
+          '<div class="callout danger"><strong>无法加载时间线。</strong><p class="small">' + escapeHtml(error.message) + '</p></div>';
+        document.getElementById('replayArtifacts').innerHTML =
+          '<div class="callout danger"><strong>无法加载定稿产物。</strong><p class="small">' + escapeHtml(error.message) + '</p></div>';
+      }
+    }
+
+    loadReplay();
+  </script>
 `);
 
 export const renderWorkflow = () => layout('Workflow', `

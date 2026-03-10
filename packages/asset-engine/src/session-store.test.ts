@@ -48,6 +48,37 @@ describe('SessionStore', () => {
     expect(loaded).toEqual(session);
   });
 
+  it('lists sessions ordered by most recent activity', async () => {
+    const older: ConversationSession = {
+      sessionId: 'session-older',
+      topic: 'Earlier topic',
+      status: 'active',
+      currentMode: 'challenge',
+      sharedContext: {
+        hardConstraints: [],
+        confirmedFacts: [],
+        sourceReferences: [],
+      },
+      createdAt: '2026-03-10T00:00:00.000Z',
+      updatedAt: '2026-03-10T00:00:01.000Z',
+      lastActiveAt: '2026-03-10T00:00:02.000Z',
+    };
+    const newer: ConversationSession = {
+      ...older,
+      sessionId: 'session-newer',
+      topic: 'Later topic',
+      updatedAt: '2026-03-10T00:10:01.000Z',
+      lastActiveAt: '2026-03-10T00:10:02.000Z',
+    };
+
+    await store.saveSession(testDir, older);
+    await store.saveSession(testDir, newer);
+
+    const sessions = await store.listSessions(testDir);
+
+    expect(sessions.map((session) => session.sessionId)).toEqual(['session-newer', 'session-older']);
+  });
+
   it('appends and lists timeline events', async () => {
     const event: ConversationEvent = {
       type: 'user_message',

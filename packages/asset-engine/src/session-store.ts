@@ -17,6 +17,7 @@ import {
 export interface SessionStore {
   saveSession(projectPath: string, session: ConversationSession): Promise<void>;
   getSession(projectPath: string, sessionId: string): Promise<ConversationSession | null>;
+  listSessions(projectPath: string): Promise<ConversationSession[]>;
   appendEvent(projectPath: string, event: ConversationEvent): Promise<void>;
   listEvents(projectPath: string, sessionId: string): Promise<ConversationEvent[]>;
   saveModeState(projectPath: string, sessionId: string, state: ModeState): Promise<void>;
@@ -50,6 +51,10 @@ async function readJson<T>(filePath: string): Promise<T | null> {
 
 function getSessionRoot(projectPath: string, sessionId: string): string {
   return path.join(projectPath, '.prodmind', 'sessions', sessionId);
+}
+
+function getSessionsDir(projectPath: string): string {
+  return path.join(projectPath, '.prodmind', 'sessions');
 }
 
 function getSessionFile(projectPath: string, sessionId: string): string {
@@ -86,6 +91,23 @@ export function createSessionStore(): SessionStore {
       }
       const parsed = ConversationSessionSchema.safeParse(raw);
       return parsed.success ? parsed.data : null;
+    },
+
+    async listSessions(projectPath: string): Promise<ConversationSession[]> {
+      try {
+        const entries = await fs.readdir(getSessionsDir(projectPath), { withFileTypes: true });
+        const sessions = await Promise.all(
+          entries
+            .filter((entry) => entry.isDirectory())
+            .map(async (entry) => this.getSession(projectPath, entry.name))
+        );
+
+        return sessions
+          .filter((session): session is ConversationSession => session !== null)
+          .sort((left, right) => right.lastActiveAt.localeCompare(left.lastActiveAt));
+      } catch {
+        return [];
+      }
     },
 
     async appendEvent(projectPath: string, event: ConversationEvent): Promise<void> {
