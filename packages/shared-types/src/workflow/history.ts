@@ -25,6 +25,8 @@ export const WorkflowRunSchema = z.object({
 });
 
 export type WorkflowRun = z.infer<typeof WorkflowRunSchema>;
+export const LegacyWorkflowRunSchema = WorkflowRunSchema;
+export type LegacyWorkflowRun = WorkflowRun;
 
 export const WorkflowResultSchema = z.object({
   runId: z.string(),
@@ -44,3 +46,5 @@ export const WorkflowResultSchema = z.object({
 });
 
 export type WorkflowResult = z.infer<typeof WorkflowResultSchema>;
+export const LegacyWorkflowResultSchema = WorkflowResultSchema;
+export type LegacyWorkflowResult = WorkflowResult;
