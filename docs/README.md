@@ -1,9 +1,10 @@
 # Docs Index
 
-Documentation is grouped around the current V1 closeout state: a single-user decision workbench with Web as the main entry and CLI as an operator assist.
+Documentation is grouped around the current conversation-first V1 direction: a topic-first internal thinking tool with Web as the main entry and CLI as an operator assist.
 
 ## V1 Release Docs
 
+- [product-principles.md](product-principles.md)
 - [v1-boundary.md](v1-boundary.md)
 - [v1-release-checklist.md](v1-release-checklist.md)
 - [runbook.md](runbook.md)

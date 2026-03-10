@@ -4,7 +4,7 @@
 
 Ready for internal V1 release: yes.
 
-This checklist is the gate for the single-user decision workbench V1. It is not a broader production rollout checklist.
+This checklist is the gate for the conversation-first internal thinking tool V1. It is not a broader production rollout checklist.
 
 ## Blocking Checks
 
@@ -26,11 +26,11 @@ These remain non-blocking because V1 is still internal-pilot scoped and the defa
 ## Required User Journey
 
 1. Start from Web home page.
-2. Submit a workflow idea from Web.
-3. Observe stage progress and completion or failure semantics.
-4. Review structured results.
-5. Reopen the run from Web history.
-6. Reopen the same run from CLI history.
+2. Start from a topic or reopen a session from Web.
+3. Observe conversation progress and completion or failure semantics.
+4. Review drafts, artifacts, or legacy structured results depending on the active path.
+5. Reopen the session or run from Web history.
+6. Reopen the same record from CLI history.
 
 ## Required Commands
 

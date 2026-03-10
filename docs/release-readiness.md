@@ -6,7 +6,7 @@
 
 ## Current Release Target
 
-Internal V1 release candidate for a single-user decision workbench.
+Internal V1 release candidate for a conversation-first internal thinking tool.
 
 ## Ready For Internal V1 Release
 
@@ -15,7 +15,7 @@ Yes.
 Why:
 
 - `pnpm run check:all` passed on 2026-03-09
-- fake-provider workflow path passed
+- fake-provider path passed
 - Web main path passed
 - CLI auxiliary path passed
 - Web and CLI history revisit paths passed
@@ -42,9 +42,9 @@ Still not ready for:
 
 ### User Journey
 
-- [x] Web home -> workflow -> results
-- [x] Web history list -> history detail
-- [x] CLI workflow
+- [x] Web home -> session/history direction
+- [x] legacy Web workflow/history path still works during migration
+- [x] CLI legacy workflow
 - [x] CLI history list -> history show
 
 ### Provider And Validation
@@ -62,8 +62,8 @@ Environment note:
 ## Known Limitations Allowed Into V1
 
 - single-user only
-- Web remains thin and read-only around engine outputs
-- CLI remains a secondary operator surface
+- Web is still migrating from legacy workflow pages to session-first pages
+- CLI remains a secondary operator surface and legacy baseline
 - fake provider remains the default path
 - real-provider validation remains opt-in
 - usage/cost visibility remains minimal, not billing-grade

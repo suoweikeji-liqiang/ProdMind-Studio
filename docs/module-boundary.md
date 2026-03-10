@@ -6,6 +6,7 @@
 - `shared-types` is the single source of cross-package contracts.
 - `llm-adapter` is the only package that talks to provider SDKs.
 - Engines must not depend on web framework or CLI framework APIs.
+- Product-shell semantics must be session-first, not workflow-first.
 
 ## Dependency Direction
 - Allowed direction:
@@ -39,8 +40,8 @@
 - Database choice and framework-specific persistence wiring.
 
 ### Inputs/Outputs
-- Input: idea text, round history, user responses, provider/model route selection.
-- Output: structured round events and challenge conclusions (typed DTOs from `shared-types`).
+- Input: topic text, challenge-mode history, user responses, provider/model route selection.
+- Output: structured challenge events, role outputs, and challenge conclusions (typed DTOs from `shared-types`).
 
 ## `packages/decision-engine`
 
@@ -62,13 +63,14 @@
 - CLI menu and interaction shell.
 
 ### Inputs/Outputs
-- Input: session state, user action, scheduler policy inputs.
-- Output: updated decision state, snapshot records, confidence updates, agent-event stream.
+- Input: decision-mode state, user action, scheduler policy inputs.
+- Output: updated decision-mode state, recommendation signals, and visible role-event stream.
 
 ## `packages/asset-engine`
 
 ### Owns
 - Project-state persistence primitives (atomic write, recovery, schema validation).
+- Session persistence primitives for the conversation-first shell.
 - Project lifecycle:
   - create/open/list/delete
   - snapshot
@@ -87,13 +89,14 @@
 - CLI/Web shell operations.
 
 ### Inputs/Outputs
-- Input: normalized domain events + project state.
-- Output: filesystem artifacts and portable asset DTOs.
+- Input: normalized session events, mode state, and project state.
+- Output: filesystem artifacts, session persistence payloads, and portable asset DTOs.
 
 ## `packages/shared-types`
 
 ### Owns
 - Canonical domain types for:
+  - conversation session/mode/event/artifact version
   - challenge session/round/conflict
   - decision state tree/assumption/risk/snapshot
   - asset project/doc output
@@ -129,6 +132,7 @@
   - collect user input
   - print streamed output
   - call engine APIs
+  - preserve legacy V1 baseline behavior while Web catches up
 
 ### Non-Goals
 - No embedded business rules from old repos.
@@ -137,18 +141,21 @@
 ## `apps/web` in New Architecture
 
 ### Position
-- Thin transport + presentation layer.
+- Primary product shell for topic-first sessions.
 - Responsibilities:
-  - route requests and SSE/WebSocket transport
-  - render UI
-  - call engine APIs
+  - create and reopen sessions
+  - route session requests and transport
+  - render topic-first conversation UI
+  - show visible multi-role output
+  - show per-mode draft summaries and finalized artifacts
+  - call engine APIs without re-owning their domain logic
 
 ### Non-Goals
 - No challenge/decision core logic in route handlers/components.
 - No standalone type definitions diverging from `shared-types`.
+- No product drift back to a one-submit workflow runner.
 
 ## Boundary Checkpoints for Migration
 - Any migrated file referencing `next/*`, `commander`, `inquirer`, or UI components stays out of engine packages unless converted to a pure contract.
 - Any provider SDK import outside `llm-adapter` is a boundary violation.
 - Any duplicated type definition outside `shared-types` is a boundary violation.
-
