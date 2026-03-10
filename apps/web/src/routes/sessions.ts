@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { runChallengeRound } from '@prodmind/challenge-engine';
+import { buildDecisionModeOutput, createDecisionSession, runDecisionOrchestration } from '@prodmind/decision-engine';
 import { createRuntimeAdapter } from '@prodmind/llm-adapter';
 import type { ModeMessage, RoleIdentity } from '@prodmind/shared-types';
 import { ConversationModeSchema } from '@prodmind/shared-types';
@@ -28,6 +29,13 @@ const CHALLENGE_FAKE_RESPONSE = [
   '最小动作：先在内部团队试跑 1 周，再根据使用反馈调节角色密度。',
 ].join('\n');
 
+const DECISION_FAKE_RESPONSE = [
+  'hypothesis: session-first history improves continuity',
+  'risk: switching modes too early may fragment the discussion',
+  'option: keep one topic per session and isolate mode-local history',
+  'summary: use a single session shell, but keep challenge and decision state separated',
+].join('\n');
+
 const CHALLENGE_ROLE_SET: RoleIdentity[] = [
   { roleId: 'architect', roleName: '架构师' },
   { roleId: 'assassin', roleName: '刺客' },
@@ -51,6 +59,29 @@ function createChallengeAdapter() {
             inputTokens: 100,
             outputTokens: 80,
             totalTokens: 180,
+          },
+        },
+      },
+    }
+  );
+}
+
+function createDecisionAdapter() {
+  return createRuntimeAdapter(
+    loadProviderConfig(),
+    { default: DECISION_FAKE_RESPONSE },
+    {
+      usage: {
+        tokenAccounting: 'estimated',
+        costAccounting: 'unavailable',
+      },
+      behavior: {
+        streamText: {
+          usage: {
+            tokenAvailability: 'estimated',
+            inputTokens: 90,
+            outputTokens: 60,
+            totalTokens: 150,
           },
         },
       },
@@ -143,6 +174,36 @@ sessionsRouter.post('/:id/messages', async (req: Request, res: Response) => {
   }
 
   if (result.state.session.currentMode !== 'challenge') {
+    if (result.state.session.currentMode === 'decision') {
+      try {
+        const adapter = createDecisionAdapter();
+        const decisionSession = createDecisionSession(`${result.state.session.topic}\n\n最新用户输入：${content}`);
+        const completed = await runDecisionOrchestration(decisionSession, adapter);
+        const decisionOutput = buildDecisionModeOutput(completed);
+        const updated = await appendLiveRoleMessages(projectPath, id, decisionOutput.messages, {
+          roleSet: decisionOutput.roleSet,
+          draftSummary: {
+            summary: decisionOutput.draftSummary,
+            updatedAt: new Date().toISOString(),
+          },
+        });
+
+        if (!updated) {
+          return res.status(404).json({ error: 'Session not found' });
+        }
+
+        return res.status(200).json({
+          session: updated.state.session,
+          modeState: updated.state.modeStates[updated.state.session.currentMode] ?? null,
+          event: result.event,
+        });
+      } catch (error) {
+        return res.status(502).json({
+          error: error instanceof Error ? error.message : 'Decision turn failed',
+        });
+      }
+    }
+
     return res.status(202).json({
       session: result.state.session,
       modeState: result.state.modeStates[result.state.session.currentMode] ?? null,

@@ -406,7 +406,7 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
     </div>
     <div class="stack">
       <div class="card">
-        <h2>右侧沉淀区</h2>
+        <h2>当前模式草稿</h2>
         <div id="draftPanel" class="empty">当前模式的草稿摘要、定稿版本和结构化产物会显示在这里。</div>
       </div>
       <div class="card">
@@ -431,6 +431,19 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
       }
     }
 
+    function renderTimeline(messages) {
+      if (!Array.isArray(messages) || messages.length === 0) {
+        return '<div class="timeline-item"><strong>等待消息</strong><span class="microcopy">后续这里会显示用户消息、多角色发言和模式切换事件。</span></div>';
+      }
+
+      return messages.map((message) => (
+        '<div class="timeline-item">' +
+          '<strong>' + escapeHtml(message.roleName || (message.speaker === 'user' ? '用户' : '系统')) + '</strong>' +
+          '<div>' + escapeHtml(message.content) + '</div>' +
+        '</div>'
+      )).join('');
+    }
+
     async function loadSession() {
       try {
         const response = await fetch('/api/sessions/${escapeHtml(sessionId)}');
@@ -448,9 +461,15 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
             '<div class="timeline-item"><strong>当前模式</strong>' + escapeHtml(data.session.currentMode) + '</div>' +
             '<div class="timeline-item"><strong>状态</strong>' + escapeHtml(data.session.status) + '</div>' +
           '</div>';
+        document.getElementById('timeline').innerHTML = renderTimeline(data.modeState && data.modeState.messages);
+        document.getElementById('draftPanel').innerHTML = data.modeState && data.modeState.draftSummary
+          ? '<div class="timeline-item"><strong>当前模式草稿</strong><div>' + escapeHtml(data.modeState.draftSummary.summary) + '</div></div>'
+          : '<div class="empty">当前模式还没有草稿摘要。</div>';
       } catch (error) {
         document.getElementById('sessionMeta').innerHTML =
           '<div class="callout danger"><strong>无法加载会话。</strong><p class="small">' + escapeHtml(error.message) + '</p></div>';
+        document.getElementById('draftPanel').innerHTML =
+          '<div class="callout danger"><strong>无法加载草稿。</strong><p class="small">' + escapeHtml(error.message) + '</p></div>';
       }
     }
 

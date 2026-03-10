@@ -116,6 +116,7 @@ describe('Web Happy Path', () => {
     const sessionHtml = renderSessionPage('session-42');
     expect(sessionHtml).toContain('会话');
     expect(sessionHtml).toContain('当前模式');
+    expect(sessionHtml).toContain('当前模式草稿');
     expect(sessionHtml).toContain('/api/sessions/session-42');
 
     const historyHtml = renderSessionHistoryPage();
@@ -253,6 +254,7 @@ describe('Web Session Shell', () => {
       const sessionHtml = await sessionResponse.text();
       expect(sessionResponse.status).toBe(200);
       expect(sessionHtml).toContain('当前模式');
+      expect(sessionHtml).toContain('当前模式草稿');
       expect(sessionHtml).toContain('/api/sessions/session-123');
 
       const historyResponse = await fetch(`${baseUrl}/sessions`);
@@ -316,7 +318,7 @@ describe('Web Session API', () => {
     });
   });
 
-  it('appends user messages when the active mode does not trigger challenge execution', async () => {
+  it('appends user messages when the active mode has no live engine yet', async () => {
     await withAppServer(async (baseUrl) => {
       const createResponse = await fetch(`${baseUrl}/api/sessions`, {
         method: 'POST',
@@ -328,7 +330,7 @@ describe('Web Session API', () => {
       await fetch(`${baseUrl}/api/sessions/${created.session.sessionId}/mode`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: 'decision', projectPath: testSessionsDir }),
+        body: JSON.stringify({ mode: 'requirement-build', projectPath: testSessionsDir }),
       });
 
       const messageResponse = await fetch(`${baseUrl}/api/sessions/${created.session.sessionId}/messages`, {
@@ -340,7 +342,7 @@ describe('Web Session API', () => {
       expect(messageResponse.status).toBe(202);
       const accepted = await messageResponse.json();
       expect(accepted.event.type).toBe('user_message');
-      expect(accepted.event.mode).toBe('decision');
+      expect(accepted.event.mode).toBe('requirement-build');
 
       const getResponse = await fetch(`${baseUrl}/api/sessions/${created.session.sessionId}`);
       const loaded = await getResponse.json();
@@ -400,6 +402,78 @@ describe('Web Session API', () => {
         expect(secondTurn.modeState.messages.filter((message: { speaker: string; }) => message.speaker === 'role')).toHaveLength(8);
         expect(secondTurn.modeState.draftSummary.summary).toContain('第 2 轮');
         expect(secondTurn.modeState.messages.some((message: { roleName?: string; }) => message.roleName === '架构师')).toBe(true);
+      });
+    } finally {
+      process.env.PROVIDER_MODE = previous.mode;
+      process.env.PROVIDER_TYPE = previous.type;
+      process.env.MODEL_ID = previous.modelId;
+    }
+  });
+
+  it('switches to decision mode without mixing challenge history', async () => {
+    const previous = {
+      mode: process.env.PROVIDER_MODE,
+      type: process.env.PROVIDER_TYPE,
+      modelId: process.env.MODEL_ID,
+    };
+
+    process.env.PROVIDER_MODE = 'fake';
+    process.env.PROVIDER_TYPE = 'openai';
+    process.env.MODEL_ID = 'fake-model';
+
+    try {
+      await withAppServer(async (baseUrl) => {
+        const createResponse = await fetch(`${baseUrl}/api/sessions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ topic: '在一个会话里切换 challenge 和 decision', projectPath: testSessionsDir }),
+        });
+        const created = await createResponse.json();
+        const sessionId = created.session.sessionId;
+
+        await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: '先做一轮 challenge。', projectPath: testSessionsDir }),
+        });
+
+        const switchResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/mode`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: 'decision', projectPath: testSessionsDir }),
+        });
+        expect(switchResponse.status).toBe(200);
+
+        const decisionResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: '现在请给出决策建议。', projectPath: testSessionsDir }),
+        });
+
+        expect(decisionResponse.status).toBe(200);
+        const decisionTurn = await decisionResponse.json();
+        expect(decisionTurn.modeState.mode).toBe('decision');
+        expect(decisionTurn.modeState.roleSet).toEqual([
+          { roleId: 'solution', roleName: '方案官' },
+          { roleId: 'risk', roleName: '风险官' },
+          { roleId: 'tradeoff', roleName: '权衡官' },
+          { roleId: 'verdict', roleName: '裁决官' },
+        ]);
+        expect(decisionTurn.modeState.messages.filter((message: { speaker: string; }) => message.speaker === 'user')).toHaveLength(1);
+        expect(decisionTurn.modeState.messages.filter((message: { speaker: string; }) => message.speaker === 'role')).toHaveLength(4);
+        expect(decisionTurn.modeState.draftSummary.summary).toContain('当前建议');
+
+        await fetch(`${baseUrl}/api/sessions/${sessionId}/mode`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: 'challenge', projectPath: testSessionsDir }),
+        });
+
+        const challengeResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}`);
+        const challengeState = await challengeResponse.json();
+        expect(challengeState.modeState.mode).toBe('challenge');
+        expect(challengeState.modeState.messages.filter((message: { speaker: string; }) => message.speaker === 'user')).toHaveLength(1);
+        expect(challengeState.modeState.messages.filter((message: { speaker: string; }) => message.speaker === 'role')).toHaveLength(4);
       });
     } finally {
       process.env.PROVIDER_MODE = previous.mode;
