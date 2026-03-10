@@ -149,16 +149,19 @@ const layout = (title: string, content: string) => `<!DOCTYPE html>
     .section { margin: 24px 0; }
     .section-header { margin-bottom: 12px; }
     label { display: block; font-weight: 600; margin-bottom: 8px; }
+    input,
     textarea {
       width: 100%;
-      min-height: 160px;
       padding: 14px 16px;
       border-radius: 16px;
       border: 1px solid var(--line);
-      resize: vertical;
       font: inherit;
       background: var(--surface);
       color: var(--ink);
+    }
+    textarea {
+      min-height: 160px;
+      resize: vertical;
     }
     .stage-list { display: grid; gap: 10px; }
     .stage {
@@ -213,10 +216,66 @@ const layout = (title: string, content: string) => `<!DOCTYPE html>
       border: 1px dashed var(--line);
       background: rgba(255, 253, 248, 0.66);
     }
+    .session-shell {
+      display: grid;
+      grid-template-columns: minmax(0, 1.6fr) minmax(280px, 0.9fr);
+      gap: 18px;
+      align-items: start;
+    }
+    .mode-switcher {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin: 16px 0;
+    }
+    .mode-pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: var(--surface-strong);
+      border: 1px solid var(--line);
+      color: #423b2e;
+      font-weight: 600;
+    }
+    .mode-pill.active {
+      background: var(--accent-soft);
+      border-color: rgba(15, 118, 110, 0.4);
+      color: var(--accent);
+    }
+    .timeline {
+      display: grid;
+      gap: 12px;
+    }
+    .timeline-item {
+      padding: 14px 16px;
+      border-radius: 16px;
+      border: 1px solid rgba(87, 73, 43, 0.12);
+      background: rgba(255, 255, 255, 0.58);
+    }
+    .timeline-item strong {
+      display: block;
+      margin-bottom: 6px;
+    }
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+    }
+    .microcopy {
+      color: #6b4f1d;
+      font-size: 0.92rem;
+    }
+    .compat-note {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px dashed rgba(87, 73, 43, 0.24);
+    }
 
     @media (max-width: 720px) {
       nav { flex-direction: column; align-items: flex-start; }
       .hero { grid-template-columns: 1fr; }
+      .session-shell { grid-template-columns: 1fr; }
       main { padding: 24px 16px 40px; }
     }
   </style>
@@ -225,9 +284,8 @@ const layout = (title: string, content: string) => `<!DOCTYPE html>
   <nav>
     <div class="brand">ProdMind Studio</div>
     <div class="links">
-      <a href="/">Home</a>
-      <a href="/workflow">New Workflow</a>
-      <a href="/history">History</a>
+      <a href="/">首页</a>
+      <a href="/sessions">会话历史</a>
     </div>
   </nav>
   <main>${content}</main>
@@ -237,34 +295,193 @@ const layout = (title: string, content: string) => `<!DOCTYPE html>
 export const renderHome = () => layout('Home', `
   <section class="hero">
     <div class="card">
-      <div class="eyebrow">Single-user decision workbench</div>
-      <h1>Turn one idea into a challenged decision, a recommendation, and reusable output.</h1>
+      <div class="eyebrow">中文多轮思维工具</div>
+      <h1>先明确议题，再进入多角色、多轮的严肃思考。</h1>
       <p>
-        ProdMind Studio keeps the V1 path narrow on purpose: idea input, challenge, decision,
-        asset output, history revisit, and basic recovery for one main operator.
+        ProdMind Studio 现在以会话为中心，而不是一次性 workflow。你先输入议题，
+        再在同一个会话里手动切换 <code>challenge</code>、<code>decision</code>、
+        <code>requirement-build</code> 三种思考模式。
       </p>
-      <div class="actions">
-        <a class="button" href="/workflow">Start New Workflow</a>
-        <a class="button secondary" href="/history">Review History</a>
+      <form id="topicForm" class="stack">
+        <div>
+          <label for="topic">请输入本次要讨论的议题</label>
+          <textarea
+            id="topic"
+            name="topic"
+            required
+            placeholder="例如：我们是否应该把现有 CLI 产品迁移成一个可部署给公司内部使用的中文 Web 思维工具？"
+          ></textarea>
+        </div>
+        <p class="small">这是严肃的思维工具。一个会话只服务一个主议题，后续通过模式切换推进思考。</p>
+        <div class="actions">
+          <button type="submit">开启会话</button>
+          <a class="button secondary" href="/sessions">查看会话历史</a>
+        </div>
+        <div id="homeError" class="small" style="color: var(--danger);"></div>
+      </form>
+      <div class="compat-note">
+        <p class="small">兼容入口仍保留旧版 workflow 页面，但它不再是主路径。</p>
       </div>
     </div>
     <div class="stack">
       <div class="card">
-        <h2>What V1 covers</h2>
+        <h2>你会得到什么</h2>
         <ul>
-          <li>Web-led workflow for idea -> challenge -> decision -> assets</li>
-          <li>History revisit when you need to reopen a prior run</li>
-          <li>Provider reliability summary as operator context</li>
+          <li>围绕同一个议题保留完整时间线和模式切换痕迹</li>
+          <li>多角色可见发言，帮助团队从不同角度思考问题</li>
+          <li>右侧草稿与定稿区域，方便逐步沉淀结构化产物</li>
         </ul>
       </div>
       <div class="card">
-        <h2>What V1 does not cover</h2>
+        <h2>这一版不做什么</h2>
         <ul>
-          <li>No auth, RBAC, or multi-user collaboration</li>
-          <li>No dashboard platform or provider marketplace</li>
-          <li>No billing system or heavy database productization</li>
+          <li>不做协同编辑，也不做复杂权限系统</li>
+          <li>不把三种模式串成固定流水线</li>
+          <li>不把完整思考过程压缩成一次性结果页</li>
         </ul>
       </div>
+    </div>
+  </section>
+  <script>
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
+
+    document.getElementById('topicForm').onsubmit = async (event) => {
+      event.preventDefault();
+      const topic = event.target.topic.value;
+      document.getElementById('homeError').textContent = '';
+
+      try {
+        const response = await fetch('/api/sessions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ topic })
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          document.getElementById('homeError').innerHTML = escapeHtml(data.error || '无法创建会话。');
+          return;
+        }
+        window.location.href = '/sessions/' + encodeURIComponent(data.session.sessionId);
+      } catch (error) {
+        document.getElementById('homeError').innerHTML = escapeHtml(error.message);
+      }
+    };
+  </script>
+`);
+
+export const renderSessionPage = (sessionId: string) => layout('Session', `
+  <section class="section-header">
+    <div class="eyebrow">会话主场</div>
+    <h1>会话</h1>
+    <p>Session ID: <code>${escapeHtml(sessionId)}</code></p>
+  </section>
+  <section class="session-shell">
+    <div class="stack">
+      <div class="card">
+        <h2>当前模式</h2>
+        <div id="sessionMeta" class="empty">正在加载会话状态...</div>
+        <div class="mode-switcher">
+          <button class="mode-pill" type="button" data-mode="challenge">challenge</button>
+          <button class="mode-pill" type="button" data-mode="decision">decision</button>
+          <button class="mode-pill" type="button" data-mode="requirement-build">requirement-build</button>
+        </div>
+        <p class="small">模式切换后会持续生效，直到你再次切换。</p>
+      </div>
+      <div class="card">
+        <h2>完整时间线</h2>
+        <div id="timeline" class="timeline">
+          <div class="timeline-item">
+            <strong>等待消息</strong>
+            <span class="microcopy">后续这里会显示用户消息、多角色发言和模式切换事件。</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="stack">
+      <div class="card">
+        <h2>右侧沉淀区</h2>
+        <div id="draftPanel" class="empty">当前模式的草稿摘要、定稿版本和结构化产物会显示在这里。</div>
+      </div>
+      <div class="card">
+        <h2>输入提示</h2>
+        <p>先在当前模式下继续提问，再决定是否切到其他模式。每个模式维护自己的上下文，但共用同一个议题。</p>
+      </div>
+    </div>
+  </section>
+  <script>
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
+
+    function renderModePills(currentMode) {
+      for (const button of document.querySelectorAll('[data-mode]')) {
+        button.classList.toggle('active', button.dataset.mode === currentMode);
+      }
+    }
+
+    async function loadSession() {
+      try {
+        const response = await fetch('/api/sessions/${escapeHtml(sessionId)}');
+        const data = await response.json();
+        if (!response.ok) {
+          document.getElementById('sessionMeta').innerHTML =
+            '<div class="callout danger"><strong>无法加载会话。</strong><p class="small">' + escapeHtml(data.error || 'Unknown error') + '</p></div>';
+          return;
+        }
+
+        renderModePills(data.session.currentMode);
+        document.getElementById('sessionMeta').innerHTML =
+          '<div class="meta-grid">' +
+            '<div class="timeline-item"><strong>议题</strong>' + escapeHtml(data.session.topic) + '</div>' +
+            '<div class="timeline-item"><strong>当前模式</strong>' + escapeHtml(data.session.currentMode) + '</div>' +
+            '<div class="timeline-item"><strong>状态</strong>' + escapeHtml(data.session.status) + '</div>' +
+          '</div>';
+      } catch (error) {
+        document.getElementById('sessionMeta').innerHTML =
+          '<div class="callout danger"><strong>无法加载会话。</strong><p class="small">' + escapeHtml(error.message) + '</p></div>';
+      }
+    }
+
+    loadSession();
+  </script>
+`);
+
+export const renderSessionHistoryPage = () => layout('Sessions', `
+  <section class="section-header">
+    <div class="eyebrow">按议题回看</div>
+    <h1>会话历史</h1>
+    <p>后续这里会按议题、最近活跃时间和各模式沉淀状态组织历史，而不是按 workflow run 组织。</p>
+  </section>
+  <section class="card">
+    <div class="empty">
+      <strong>新的会话历史壳层已经就位。</strong>
+      <p class="small">会话历史 API 会在 session 语义迁移完成后接入。旧版 workflow 历史暂时仍保留在兼容入口中。</p>
+    </div>
+  </section>
+`);
+
+export const renderSessionReplayPage = (sessionId: string) => layout('Replay', `
+  <section class="section-header">
+    <div class="eyebrow">过程回放</div>
+    <h1>会话回放</h1>
+    <p>Session ID: <code>${escapeHtml(sessionId)}</code></p>
+  </section>
+  <section class="card">
+    <div class="empty">
+      <strong>这里会回放完整过程。</strong>
+      <p class="small">包括模式切换、角色发言、草稿更新和定稿节点。当前先把页面语义切换到 session/replay。</p>
     </div>
   </section>
 `);

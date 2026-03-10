@@ -42,22 +42,37 @@ describe('Web Happy Path', () => {
   });
 
   it('should have view renderers exported', async () => {
-    const { renderHome, renderWorkflow, renderResults, renderHistoryListPage, renderHistoryDetailPage } = await import('../src/views/index.js');
+    const {
+      renderHome,
+      renderWorkflow,
+      renderResults,
+      renderHistoryListPage,
+      renderHistoryDetailPage,
+      renderSessionPage,
+      renderSessionHistoryPage,
+      renderSessionReplayPage,
+    } = await import('../src/views/index.js');
     expect(renderHome).toBeDefined();
     expect(renderWorkflow).toBeDefined();
     expect(renderResults).toBeDefined();
     expect(renderHistoryListPage).toBeDefined();
     expect(renderHistoryDetailPage).toBeDefined();
+    expect(renderSessionPage).toBeDefined();
+    expect(renderSessionHistoryPage).toBeDefined();
+    expect(renderSessionReplayPage).toBeDefined();
   });
 
-  it('should render home page with V1 framing and history CTA', async () => {
+  it('should render home page with topic-first session entry', async () => {
     const { renderHome } = await import('../src/views/index.js');
     const html = renderHome();
     expect(html).toContain('ProdMind Studio');
-    expect(html).toContain('Start New Workflow');
-    expect(html).toContain('Single-user decision workbench');
-    expect(html).toContain('Review History');
-    expect(html).toContain('/history');
+    expect(html).toContain('中文多轮思维工具');
+    expect(html).toContain('请输入本次要讨论的议题');
+    expect(html).toContain('name="topic"');
+    expect(html).toContain('required');
+    expect(html).toContain('开启会话');
+    expect(html).toContain('/sessions');
+    expect(html).not.toContain('Start New Workflow');
   });
 
   it('should render workflow page with status and recovery guidance', async () => {
@@ -93,6 +108,23 @@ describe('Web Happy Path', () => {
     expect(detailHtml).toContain('History Detail');
     expect(detailHtml).toContain('run-42');
     expect(detailHtml).toContain('/api/workflow/history/run-42');
+  });
+
+  it('should render session shell pages', async () => {
+    const { renderSessionPage, renderSessionHistoryPage, renderSessionReplayPage } = await import('../src/views/index.js');
+
+    const sessionHtml = renderSessionPage('session-42');
+    expect(sessionHtml).toContain('会话');
+    expect(sessionHtml).toContain('当前模式');
+    expect(sessionHtml).toContain('/api/sessions/session-42');
+
+    const historyHtml = renderSessionHistoryPage();
+    expect(historyHtml).toContain('会话历史');
+    expect(historyHtml).toContain('按议题回看');
+
+    const replayHtml = renderSessionReplayPage('session-42');
+    expect(replayHtml).toContain('会话回放');
+    expect(replayHtml).toContain('session-42');
   });
 
   it('should render provider summary block', async () => {
@@ -204,6 +236,35 @@ describe('Web Happy Path', () => {
     expect(html).toContain('Route:</strong>');
     expect(html).toContain('Failure Stage:</strong> primary');
     expect(html).toContain('Policy:</strong> timeout=5000ms');
+  });
+});
+
+describe('Web Session Shell', () => {
+  it('serves session-first pages', async () => {
+    await withAppServer(async (baseUrl) => {
+      const homeResponse = await fetch(`${baseUrl}/`);
+      const homeHtml = await homeResponse.text();
+      expect(homeResponse.status).toBe(200);
+      expect(homeHtml).toContain('请输入本次要讨论的议题');
+      expect(homeHtml).toContain('/sessions');
+      expect(homeHtml).not.toContain('Start New Workflow');
+
+      const sessionResponse = await fetch(`${baseUrl}/sessions/session-123`);
+      const sessionHtml = await sessionResponse.text();
+      expect(sessionResponse.status).toBe(200);
+      expect(sessionHtml).toContain('当前模式');
+      expect(sessionHtml).toContain('/api/sessions/session-123');
+
+      const historyResponse = await fetch(`${baseUrl}/sessions`);
+      const historyHtml = await historyResponse.text();
+      expect(historyResponse.status).toBe(200);
+      expect(historyHtml).toContain('会话历史');
+
+      const replayResponse = await fetch(`${baseUrl}/sessions/session-123/replay`);
+      const replayHtml = await replayResponse.text();
+      expect(replayResponse.status).toBe(200);
+      expect(replayHtml).toContain('会话回放');
+    });
   });
 });
 
