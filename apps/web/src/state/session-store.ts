@@ -7,6 +7,7 @@ import type {
   ModeMessage,
   ModeState,
   RoleIdentity,
+  SharedContext,
 } from '@prodmind/shared-types';
 
 export interface LiveSessionState {
@@ -261,6 +262,49 @@ export async function replaceLiveModeState(
 
   await persistence.saveSession(projectPath, updatedSession);
   await persistence.saveModeState(projectPath, sessionId, state);
+
+  liveSessions.set(sessionId, existing);
+  return existing;
+}
+
+export async function updateLiveSessionSharedContext(
+  projectPath: string,
+  sessionId: string,
+  patch: Partial<SharedContext>
+): Promise<LiveSessionState | null> {
+  const existing = await getLiveSession(projectPath, sessionId);
+  if (!existing) {
+    return null;
+  }
+
+  const mergeList = (current: string[], incoming?: string[]): string[] => {
+    if (!incoming || incoming.length === 0) {
+      return current;
+    }
+
+    return Array.from(new Set([
+      ...current,
+      ...incoming
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ]));
+  };
+
+  const timestamp = nowIso();
+  const updatedSession: ConversationSession = {
+    ...existing.session,
+    sharedContext: {
+      hardConstraints: mergeList(existing.session.sharedContext.hardConstraints, patch.hardConstraints),
+      confirmedFacts: mergeList(existing.session.sharedContext.confirmedFacts, patch.confirmedFacts),
+      sourceReferences: mergeList(existing.session.sharedContext.sourceReferences, patch.sourceReferences),
+    },
+    updatedAt: timestamp,
+    lastActiveAt: timestamp,
+  };
+
+  existing.session = updatedSession;
+
+  await persistence.saveSession(projectPath, updatedSession);
 
   liveSessions.set(sessionId, existing);
   return existing;

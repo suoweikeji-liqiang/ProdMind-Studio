@@ -127,6 +127,7 @@ describe('Web Happy Path', () => {
     expect(sessionHtml).toContain('id="sessionMessageForm"');
     expect(sessionHtml).toContain('id="sessionMessageInput"');
     expect(sessionHtml).toContain('id="sessionComposerError"');
+    expect(sessionHtml).toContain('id="sharedContextPanel"');
     expect(sessionHtml).toContain('id="finalizeArtifactsButton"');
     expect(sessionHtml).toContain('/api/sessions/session-42/messages');
     expect(sessionHtml).toContain('/api/sessions/session-42/mode');
@@ -496,6 +497,92 @@ describe('Web Session API', () => {
         expect(challengeState.modeState.mode).toBe('challenge');
         expect(challengeState.modeState.messages.filter((message: { speaker: string; }) => message.speaker === 'user')).toHaveLength(1);
         expect(challengeState.modeState.messages.filter((message: { speaker: string; }) => message.speaker === 'role')).toHaveLength(4);
+      });
+    } finally {
+      process.env.PROVIDER_MODE = previous.mode;
+      process.env.PROVIDER_TYPE = previous.type;
+      process.env.MODEL_ID = previous.modelId;
+    }
+  });
+
+  it('captures shared context and carries it across later modes', async () => {
+    const previous = {
+      mode: process.env.PROVIDER_MODE,
+      type: process.env.PROVIDER_TYPE,
+      modelId: process.env.MODEL_ID,
+    };
+
+    process.env.PROVIDER_MODE = 'fake';
+    process.env.PROVIDER_TYPE = 'openai';
+    process.env.MODEL_ID = 'fake-model';
+
+    try {
+      await withAppServer(async (baseUrl) => {
+        const createResponse = await fetch(`${baseUrl}/api/sessions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ topic: 'build a serious internal thinking tool', projectPath: testSessionsDir }),
+        });
+        expect(createResponse.status).toBe(201);
+        const created = await readJson<any>(createResponse);
+        const sessionId = created.session.sessionId;
+
+        const challengeResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content: [
+              'fact: Web is the main delivery surface',
+              'constraint: No collaboration in V1',
+              'source: docs/v1-boundary.md',
+              'challenge this direction',
+            ].join('\n'),
+            projectPath: testSessionsDir,
+          }),
+        });
+
+        expect(challengeResponse.status).toBe(200);
+        const challengeTurn = await readJson<any>(challengeResponse);
+        expect(challengeTurn.session.sharedContext.confirmedFacts).toContain('Web is the main delivery surface');
+        expect(challengeTurn.session.sharedContext.hardConstraints).toContain('No collaboration in V1');
+        expect(challengeTurn.session.sharedContext.sourceReferences).toContain('docs/v1-boundary.md');
+
+        const decisionModeResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/mode`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: 'decision', projectPath: testSessionsDir }),
+        });
+        expect(decisionModeResponse.status).toBe(200);
+
+        const decisionResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: 'compare the options', projectPath: testSessionsDir }),
+        });
+
+        expect(decisionResponse.status).toBe(200);
+        const decisionTurn = await readJson<any>(decisionResponse);
+        expect(decisionTurn.session.sharedContext.hardConstraints).toContain('No collaboration in V1');
+        expect(decisionTurn.modeState.draftSummary.summary).toContain('No collaboration in V1');
+
+        const requirementModeResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/mode`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: 'requirement-build', projectPath: testSessionsDir }),
+        });
+        expect(requirementModeResponse.status).toBe(200);
+
+        const requirementResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: 'turn this into drafts', projectPath: testSessionsDir }),
+        });
+
+        expect(requirementResponse.status).toBe(200);
+        const requirementTurn = await readJson<any>(requirementResponse);
+        expect(requirementTurn.session.sharedContext.confirmedFacts).toContain('Web is the main delivery surface');
+        expect(requirementTurn.artifacts.drafts.idea.content).toContain('Web is the main delivery surface');
+        expect(requirementTurn.artifacts.drafts.spec.content).toContain('No collaboration in V1');
       });
     } finally {
       process.env.PROVIDER_MODE = previous.mode;

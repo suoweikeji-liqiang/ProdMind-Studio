@@ -396,6 +396,10 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
         <div id="sessionStatusBanner" class="empty">切换模式、发送消息和定稿后，结果会立即刷新到时间线和右栏。</div>
       </div>
       <div class="card">
+        <h2>共享底稿</h2>
+        <div id="sharedContextPanel" class="empty">这里会持续显示本会话已确认事实、硬约束和参考资料。</div>
+      </div>
+      <div class="card">
         <h2>完整时间线</h2>
         <div id="timeline" class="timeline">
           <div class="timeline-item">
@@ -555,6 +559,29 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
       )).join('');
     }
 
+    function renderSharedContext(sharedContext) {
+      const facts = sharedContext && Array.isArray(sharedContext.confirmedFacts) ? sharedContext.confirmedFacts : [];
+      const constraints = sharedContext && Array.isArray(sharedContext.hardConstraints) ? sharedContext.hardConstraints : [];
+      const sources = sharedContext && Array.isArray(sharedContext.sourceReferences) ? sharedContext.sourceReferences : [];
+
+      if (facts.length === 0 && constraints.length === 0 && sources.length === 0) {
+        return '<div class="empty">当前还没有沉淀共享底稿。你可以在消息里用 fact:/constraint:/source: 或 事实：/约束：/参考： 来显式记录。</div>';
+      }
+
+      const sections = [];
+      if (facts.length > 0) {
+        sections.push('<div class="timeline-item"><strong>已确认事实</strong><div>' + facts.map((item) => escapeHtml(item)).join('<br>') + '</div></div>');
+      }
+      if (constraints.length > 0) {
+        sections.push('<div class="timeline-item"><strong>硬约束</strong><div>' + constraints.map((item) => escapeHtml(item)).join('<br>') + '</div></div>');
+      }
+      if (sources.length > 0) {
+        sections.push('<div class="timeline-item"><strong>参考资料</strong><div>' + sources.map((item) => escapeHtml(item)).join('<br>') + '</div></div>');
+      }
+
+      return sections.join('');
+    }
+
     function updateComposerHint(currentMode) {
       const input = document.getElementById('sessionMessageInput');
       if (currentMode === 'challenge') {
@@ -596,6 +623,7 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
           '<div class="timeline-item"><strong>最近活跃</strong>' + escapeHtml(data.session.lastActiveAt || data.session.updatedAt || '') + '</div>' +
         '</div>';
       document.getElementById('timeline').innerHTML = renderTimeline(data.modeState && data.modeState.messages);
+      document.getElementById('sharedContextPanel').innerHTML = renderSharedContext(data.session && data.session.sharedContext);
       document.getElementById('draftPanel').innerHTML = data.modeState && data.modeState.draftSummary
         ? '<div class="timeline-item"><strong>当前模式草稿</strong><div>' + escapeHtml(data.modeState.draftSummary.summary).replaceAll('\\n', '<br>') + '</div></div>'
         : '<div class="empty">当前模式还没有草稿摘要。</div>';

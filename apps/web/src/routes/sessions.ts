@@ -5,7 +5,7 @@ import { runChallengeRound } from '@prodmind/challenge-engine';
 import { buildDecisionModeOutput, createDecisionSession, runDecisionOrchestration } from '@prodmind/decision-engine';
 import { createRuntimeAdapter } from '@prodmind/llm-adapter';
 import { createHistoryStore, createProjectStore, createSessionStore, writeRequirementDraftPack } from '@prodmind/asset-engine';
-import type { ArtifactVersion, ModeMessage, ModeState, ProjectState, RoleIdentity } from '@prodmind/shared-types';
+import type { ArtifactVersion, ConversationSession, ModeMessage, ModeState, ProjectState, RoleIdentity, SharedContext } from '@prodmind/shared-types';
 import { ConversationModeSchema } from '@prodmind/shared-types';
 import { loadProviderConfig } from '../config.js';
 import {
@@ -15,6 +15,7 @@ import {
   getLiveSession,
   replaceLiveModeState,
   switchLiveSessionMode,
+  updateLiveSessionSharedContext,
 } from '../state/session-store.js';
 
 export const sessionsRouter: Router = Router();
@@ -56,6 +57,21 @@ const REQUIREMENT_ROLE_SET: RoleIdentity[] = [
 
 const REQUIREMENT_ARTIFACT_TYPES = ['idea', 'spec', 'acceptance', 'tasks'] as const;
 type RequirementArtifactType = (typeof REQUIREMENT_ARTIFACT_TYPES)[number];
+type SharedContextField = keyof SharedContext;
+
+const SHARED_CONTEXT_PREFIXES: Record<string, SharedContextField> = {
+  fact: 'confirmedFacts',
+  facts: 'confirmedFacts',
+  '事实': 'confirmedFacts',
+  constraint: 'hardConstraints',
+  constraints: 'hardConstraints',
+  '约束': 'hardConstraints',
+  '限制': 'hardConstraints',
+  source: 'sourceReferences',
+  sources: 'sourceReferences',
+  '参考': 'sourceReferences',
+  '引用': 'sourceReferences',
+};
 
 function createChallengeAdapter() {
   return createRuntimeAdapter(
@@ -136,10 +152,99 @@ function summarizeDraftContent(content: string, fallbackLabel: string): string {
   return lines.length > 0 ? lines.join('\n') : fallbackLabel;
 }
 
-function buildRequirementProjectState(sessionId: string, topic: string, modeState: ModeState, latestInput: string): ProjectState {
+function parseSharedContextPatch(content: string): Partial<SharedContext> {
+  const patch: SharedContext = {
+    hardConstraints: [],
+    confirmedFacts: [],
+    sourceReferences: [],
+  };
+
+  for (const rawLine of content.split('\n')) {
+    const line = rawLine.trim();
+    if (!line) {
+      continue;
+    }
+
+    const match = line.match(/^([A-Za-z]+|事实|约束|限制|参考|引用)\s*[:：]\s*(.+)$/u);
+    if (!match) {
+      continue;
+    }
+
+    const rawPrefix = match[1] ?? '';
+    const key = SHARED_CONTEXT_PREFIXES[rawPrefix.toLowerCase()] ?? SHARED_CONTEXT_PREFIXES[rawPrefix];
+    const value = match[2]?.trim();
+    if (!key || !value) {
+      continue;
+    }
+
+    patch[key].push(value);
+  }
+
+  return patch;
+}
+
+function hasSharedContextPatch(patch: Partial<SharedContext>): boolean {
+  return Boolean(
+    patch.confirmedFacts?.length ||
+    patch.hardConstraints?.length ||
+    patch.sourceReferences?.length
+  );
+}
+
+function buildSharedContextSections(sharedContext: SharedContext): string[] {
+  const sections: string[] = [];
+
+  if (sharedContext.confirmedFacts.length > 0) {
+    sections.push(`Confirmed facts: ${sharedContext.confirmedFacts.join(' | ')}`);
+  }
+  if (sharedContext.hardConstraints.length > 0) {
+    sections.push(`Hard constraints: ${sharedContext.hardConstraints.join(' | ')}`);
+  }
+  if (sharedContext.sourceReferences.length > 0) {
+    sections.push(`Sources: ${sharedContext.sourceReferences.join(' | ')}`);
+  }
+
+  return sections;
+}
+
+function buildSharedContextPrompt(sharedContext: SharedContext): string {
+  const sections = buildSharedContextSections(sharedContext);
+  if (sections.length === 0) {
+    return '';
+  }
+
+  return ['Shared context:', ...sections].join('\n');
+}
+
+function appendSharedContextSummary(summary: string, sharedContext: SharedContext): string {
+  const sections = buildSharedContextSections(sharedContext);
+  if (sections.length === 0) {
+    return summary;
+  }
+
+  return [summary, '', '共享底稿', ...sections].join('\n');
+}
+
+function buildRequirementProjectState(session: ConversationSession, modeState: ModeState, latestInput: string): ProjectState {
   const projectStore = createProjectStore();
-  const baseState = projectStore.create(sessionId, topic);
+  const baseState = projectStore.create(session.sessionId, session.topic);
   const userTurns = modeState.messages.filter((message) => message.speaker === 'user').length;
+  const sharedContextSections = buildSharedContextSections(session.sharedContext);
+  const contextLines = [
+    session.topic,
+    ...(session.sharedContext.confirmedFacts.length > 0
+      ? [`Confirmed facts: ${session.sharedContext.confirmedFacts.join(' | ')}`]
+      : []),
+    ...(session.sharedContext.sourceReferences.length > 0
+      ? [`Sources: ${session.sharedContext.sourceReferences.join(' | ')}`]
+      : []),
+  ];
+  const boundaryLines = [
+    '单议题会话，不考虑协同，产物通过草稿与定稿版本持续累积。',
+    ...(session.sharedContext.hardConstraints.length > 0
+      ? [`Hard constraints: ${session.sharedContext.hardConstraints.join(' | ')}`]
+      : []),
+  ];
 
   return {
     ...baseState,
@@ -151,25 +256,27 @@ function buildRequirementProjectState(sessionId: string, topic: string, modeStat
       timestamp: message.timestamp,
     })),
     projection: {
-      context: topic,
+      context: contextLines.join('\n'),
       actors: '公司内部需要系统化思考的使用者',
       intent: latestInput,
       mechanism: '通过中文多轮对话、模式切换和可见角色发言共同沉淀结构化需求资产。',
-      boundary: '单议题会话，不考虑协同，产物通过草稿与定稿版本持续累积。',
+      boundary: boundaryLines.join('\n'),
     },
     lastCompression: {
-      oneLiner: `${topic} 的 requirement-build 草稿`,
+      oneLiner: `${session.topic} 的 requirement-build 草稿`,
       threeLiner: [
-        `议题：${topic}`,
+        `议题：${session.topic}`,
         `当前输入：${latestInput}`,
+        ...(sharedContextSections.length > 0 ? [`共享底稿：${sharedContextSections.join('；')}`] : []),
         '目标：产出 idea/spec/acceptance/tasks 四份可持续更新的草稿。',
       ].join('\n'),
       structured: JSON.stringify(
         {
-          topic,
+          topic: session.topic,
           latestInput,
           messageCount: modeState.messages.length,
           currentMode: 'requirement-build',
+          sharedContext: session.sharedContext,
         },
         null,
         2
@@ -177,6 +284,9 @@ function buildRequirementProjectState(sessionId: string, topic: string, modeStat
     },
     lastBusinessAssumptions: [
       '使用者会先用多轮对话澄清问题，再手动定稿结构化产物。',
+      ...session.sharedContext.confirmedFacts.map((fact) => `Confirmed fact: ${fact}`),
+      ...session.sharedContext.hardConstraints.map((constraint) => `Hard constraint: ${constraint}`),
+      ...session.sharedContext.sourceReferences.map((source) => `Source reference: ${source}`),
     ],
     lastGuardWarnings: [],
   };
@@ -221,6 +331,16 @@ function buildRequirementRoleMessages(
 
 function buildRequirementDraftSummary(drafts: Record<RequirementArtifactType, { updatedAt: string }>): string {
   return `requirement-build 已更新 ${REQUIREMENT_ARTIFACT_TYPES.length} 份草稿：${REQUIREMENT_ARTIFACT_TYPES.join(' / ')}。最近更新时间 ${drafts.spec.updatedAt}。`;
+}
+
+function buildDecisionProblem(session: ConversationSession, content: string): string {
+  const sharedContextPrompt = buildSharedContextPrompt(session.sharedContext);
+  return [
+    session.topic,
+    '',
+    `Latest user input: ${content}`,
+    sharedContextPrompt,
+  ].filter(Boolean).join('\n');
 }
 
 async function loadModeArtifacts(projectPath: string, sessionId: string, mode: ModeState['mode']) {
@@ -366,22 +486,36 @@ sessionsRouter.post('/:id/messages', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'content required' });
   }
 
-  const result = await appendLiveUserMessage(projectPath, id, content);
-  if (!result) {
+  const initialResult = await appendLiveUserMessage(projectPath, id, content);
+  if (!initialResult) {
     return res.status(404).json({ error: 'Session not found' });
+  }
+
+  let result = initialResult;
+  const sharedContextPatch = parseSharedContextPatch(content);
+  if (hasSharedContextPatch(sharedContextPatch)) {
+    const updatedSharedContext = await updateLiveSessionSharedContext(projectPath, id, sharedContextPatch);
+    if (!updatedSharedContext) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    result = {
+      ...result,
+      state: updatedSharedContext,
+    };
   }
 
   if (result.state.session.currentMode !== 'challenge') {
     if (result.state.session.currentMode === 'decision') {
       try {
         const adapter = createDecisionAdapter();
-        const decisionSession = createDecisionSession(`${result.state.session.topic}\n\n最新用户输入：${content}`);
+        const decisionSession = createDecisionSession(buildDecisionProblem(result.state.session, content));
         const completed = await runDecisionOrchestration(decisionSession, adapter);
         const decisionOutput = buildDecisionModeOutput(completed);
         const updated = await appendLiveRoleMessages(projectPath, id, decisionOutput.messages, {
           roleSet: decisionOutput.roleSet,
           draftSummary: {
-            summary: decisionOutput.draftSummary,
+            summary: appendSharedContextSummary(decisionOutput.draftSummary, result.state.session.sharedContext),
             updatedAt: new Date().toISOString(),
           },
         });
@@ -410,7 +544,7 @@ sessionsRouter.post('/:id/messages', async (req: Request, res: Response) => {
           return res.status(404).json({ error: 'Mode state not found' });
         }
 
-        const projectState = buildRequirementProjectState(id, result.state.session.topic, modeState, content);
+        const projectState = buildRequirementProjectState(result.state.session, modeState, content);
         const draftDir = path.join(projectPath, '.prodmind', 'sessions', id, 'workspace', 'requirement-build', 'draft');
         const drafts = await writeRequirementDraftPack(draftDir, projectState);
 
@@ -487,7 +621,7 @@ sessionsRouter.post('/:id/messages', async (req: Request, res: Response) => {
     const round = await runChallengeRound(
       adapter,
       {
-        idea: result.state.session.topic,
+        idea: [result.state.session.topic, buildSharedContextPrompt(result.state.session.sharedContext)].filter(Boolean).join('\n\n'),
         userConfirm: content,
         userResponse: content,
       },
