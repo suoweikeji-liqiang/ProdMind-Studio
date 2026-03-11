@@ -6,7 +6,7 @@ The intended primary journey is:
 
 `topic input -> session -> mode-guided multi-round conversation -> draft summaries -> finalized artifacts -> history -> replay`
 
-Current maturity: internal-pilot ready for single-user usage while the product migrates from legacy workflow semantics to session semantics.
+Current maturity: internal-pilot ready for single-user usage on the session-first Web path.
 
 ## Product Position
 
@@ -15,6 +15,7 @@ Current maturity: internal-pilot ready for single-user usage while the product m
 - The main experience is Chinese multi-round conversation
 - `challenge`, `decision`, and `requirement-build` are user-selected thinking modes
 - Visible multi-role output and full process persistence are core product commitments
+- Legacy workflow semantics remain only as compatibility support behind the main Web journey
 
 See [docs/product-principles.md](docs/product-principles.md) and [docs/v1-boundary.md](docs/v1-boundary.md) for the explicit product boundary.
 
@@ -60,7 +61,7 @@ pnpm run build
 node dist/server.js
 ```
 
-4. Optional CLI path:
+4. Optional CLI operator path:
 
 ```bash
 cd apps/cli
@@ -70,8 +71,8 @@ node dist/index.js workflow "your topic here"
 
 Note:
 
-- The current CLI still exposes legacy workflow-style commands.
-- The current Web implementation is migrating away from workflow/results semantics toward session/history/replay semantics.
+- Web already uses `session -> history -> replay` as the default product journey.
+- CLI still exposes the legacy `workflow` command as an operator compatibility path.
 
 ## Provider Modes
 

@@ -40,7 +40,7 @@ async function readJson<T>(response: { json(): Promise<unknown> }): Promise<T> {
 }
 
 describe('Web Happy Path', () => {
-  it('should have workflow router exported', async () => {
+  it('legacy compatibility: workflow router is still present for pre-migration clients', async () => {
     const { workflowRouter } = await import('../src/routes/workflow.js');
     expect(workflowRouter).toBeDefined();
   });
@@ -91,6 +91,10 @@ describe('Web Happy Path', () => {
     expect(sessionHtml).toContain('/api/sessions/session-42/mode');
     expect(sessionHtml).toContain('/api/sessions/session-42/artifacts/finalize');
     expect(sessionHtml).toContain("document.getElementById('sessionSendButton').disabled = disabled;");
+    expect(sessionHtml).toContain('质疑模式');
+    expect(sessionHtml).toContain('裁决模式');
+    expect(sessionHtml).toContain('需求共建模式');
+    expect(sessionHtml).toContain('只在需求共建模式下启用');
 
     const historyHtml = renderSessionHistoryPage();
     expect(historyHtml).toContain('会话历史');
@@ -102,6 +106,9 @@ describe('Web Happy Path', () => {
     expect(replayHtml).toContain('session-42');
     expect(replayHtml).toContain('/api/sessions/session-42/replay');
     expect(replayHtml).toContain('共享底稿更新');
+    expect(replayHtml).toContain('建议');
+    expect(replayHtml).not.toContain('Legacy Workflow');
+    expect(replayHtml).not.toContain('Recommendation');
   });
 
   it('should render provider summary block', async () => {
@@ -636,73 +643,7 @@ describe('Web Session API', () => {
     });
   });
 
-  it.skip('lists sessions by topic and last active time', async () => {
-    await withAppServer(async (baseUrl) => {
-      const createResponse = await fetch(`${baseUrl}/api/sessions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: '一个议题对应一个会话', projectPath: testSessionsDir }),
-      });
-      const created = await readJson<any>(createResponse);
 
-      await fetch(`${baseUrl}/api/sessions/${created.session.sessionId}/messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: '先做一轮 challenge。', projectPath: testSessionsDir }),
-      });
-
-      const listResponse = await fetch(`${baseUrl}/api/sessions?projectPath=${encodeURIComponent(testSessionsDir)}`);
-
-      expect(listResponse.status).toBe(200);
-      const listed = await readJson<any>(listResponse);
-      expect(Array.isArray(listed.sessions)).toBe(true);
-      expect(listed.sessions[0].topic).toBe('一个议题对应一个会话');
-      expect(listed.sessions[0].lastActiveAt).toBeTruthy();
-    });
-  });
-
-  it.skip('reopens a session replay with full timeline and finalized outputs', async () => {
-    await withAppServer(async (baseUrl) => {
-      const createResponse = await fetch(`${baseUrl}/api/sessions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: '回放完整会话过程', projectPath: testSessionsDir }),
-      });
-      const created = await readJson<any>(createResponse);
-      const sessionId = created.session.sessionId;
-
-      await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: '先挑战这个议题。', projectPath: testSessionsDir }),
-      });
-      await fetch(`${baseUrl}/api/sessions/${sessionId}/mode`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: 'requirement-build', projectPath: testSessionsDir }),
-      });
-      await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: '整理成需求草稿。', projectPath: testSessionsDir }),
-      });
-      await fetch(`${baseUrl}/api/sessions/${sessionId}/artifacts/finalize`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectPath: testSessionsDir, note: 'baseline' }),
-      });
-
-      const replayResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/replay?projectPath=${encodeURIComponent(testSessionsDir)}`);
-
-      expect(replayResponse.status).toBe(200);
-      const replay = await readJson<any>(replayResponse);
-      expect(replay.source).toBe('session');
-      expect(replay.session.sessionId).toBe(sessionId);
-      expect(replay.events.some((event: { type: string; }) => event.type === 'mode_switched')).toBe(true);
-      expect(replay.events.some((event: { type: string; }) => event.type === 'artifact_finalized')).toBe(true);
-      expect(replay.modeStates['requirement-build'].finalArtifacts).toContain('spec:v1');
-    });
-  });
 
   it('falls back to legacy workflow history when replaying pre-migration records', async () => {
     const { createHistoryStore } = await import('@prodmind/asset-engine');

@@ -292,9 +292,9 @@ export const renderHome = () => layout('Home', `
       <div class="eyebrow">中文多轮思维工具</div>
       <h1>先明确议题，再进入多角色、多轮的严肃思考。</h1>
       <p>
-        ProdMind Studio 现在以会话为中心，而不是一次性 workflow。你先输入议题，
-        再在同一个会话里手动切换 <code>challenge</code>、<code>decision</code>、
-        <code>requirement-build</code> 三种思考模式。
+        ProdMind Studio 现在以会话为中心，而不是一次性流程页。你先输入议题，
+        再在同一个会话里手动切换 <code>质疑模式</code>、<code>裁决模式</code>、
+        <code>需求共建模式</code> 三种思考模式。
       </p>
       <form id="topicForm" class="stack">
         <div>
@@ -379,9 +379,9 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
         <h2>当前模式</h2>
         <div id="sessionMeta" class="empty">正在加载会话状态...</div>
         <div class="mode-switcher">
-          <button class="mode-pill" type="button" data-mode="challenge">challenge 质疑</button>
-          <button class="mode-pill" type="button" data-mode="decision">decision 裁决</button>
-          <button class="mode-pill" type="button" data-mode="requirement-build">requirement-build 需求共建</button>
+          <button class="mode-pill" type="button" data-mode="challenge">质疑模式</button>
+          <button class="mode-pill" type="button" data-mode="decision">裁决模式</button>
+          <button class="mode-pill" type="button" data-mode="requirement-build">需求共建模式</button>
         </div>
         <p class="small">模式切换后会持续生效，直到你再次切换。</p>
         <div id="sessionStatusBanner" class="empty">切换模式、发送消息和定稿后，结果会立即刷新到时间线和右栏。</div>
@@ -448,7 +448,7 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
           </div>
           <div id="finalizeArtifactsError" class="small" style="color: var(--danger);"></div>
         </form>
-        <p class="small">只在 <code>requirement-build</code> 模式下启用，且会保留所有历史版本。</p>
+        <p class="small">只在需求共建模式下启用，且会保留所有历史版本。</p>
       </div>
     </div>
   </section>
@@ -468,10 +468,10 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
     }
 
     function modeLabel(mode) {
-      if (mode === 'challenge') return 'challenge 质疑';
-      if (mode === 'decision') return 'decision 裁决';
-      if (mode === 'requirement-build') return 'requirement-build 需求共建';
-      return String(mode || 'unknown');
+      if (mode === 'challenge') return '质疑模式';
+      if (mode === 'decision') return '裁决模式';
+      if (mode === 'requirement-build') return '需求共建模式';
+      return String(mode || '未知模式');
     }
 
     function setInlineMessage(elementId, message) {
@@ -783,6 +783,13 @@ export const renderSessionHistoryPage = () => layout('Sessions', `
         .replaceAll("'", '&#39;');
     }
 
+    function modeLabel(mode) {
+      if (mode === 'challenge') return '质疑模式';
+      if (mode === 'decision') return '裁决模式';
+      if (mode === 'requirement-build') return '需求共建模式';
+      return String(mode || '未知模式');
+    }
+
     function renderSessionItems(items) {
       if (!Array.isArray(items) || items.length === 0) {
         return '<div class="empty"><strong>还没有会话历史。</strong><p class="small">先从首页输入一个严肃议题，再进入会话。</p></div>';
@@ -792,7 +799,7 @@ export const renderSessionHistoryPage = () => layout('Sessions', `
         '<article class="result-section">' +
           '<h3><a href="/sessions/' + encodeURIComponent(item.sessionId) + '">' + escapeHtml(item.topic) + '</a></h3>' +
           '<p><strong>最近活跃：</strong>' + escapeHtml(item.lastActiveAt) + '</p>' +
-          '<p><strong>当前模式：</strong>' + escapeHtml(item.currentMode) + '</p>' +
+          '<p><strong>当前模式：</strong>' + escapeHtml(modeLabel(item.currentMode)) + '</p>' +
           '<p><a href="/sessions/' + encodeURIComponent(item.sessionId) + '/replay">打开回放</a></p>' +
         '</article>'
       )).join('');
@@ -848,6 +855,13 @@ export const renderSessionReplayPage = (sessionId: string) => layout('Replay', `
         .replaceAll("'", '&#39;');
     }
 
+    function modeLabel(mode) {
+      if (mode === 'challenge') return '质疑模式';
+      if (mode === 'decision') return '裁决模式';
+      if (mode === 'requirement-build') return '需求共建模式';
+      return String(mode || '未知模式');
+    }
+
     function renderReplayEvents(events) {
       if (!Array.isArray(events) || events.length === 0) {
         return '<div class="empty">当前会话还没有可回放的事件。</div>';
@@ -855,7 +869,7 @@ export const renderSessionReplayPage = (sessionId: string) => layout('Replay', `
 
       return events.map((event) => {
         if (event.type === 'mode_switched') {
-          return '<div class="timeline-item"><strong>模式切换</strong><div>' + escapeHtml(event.fromMode + ' -> ' + event.toMode) + '</div></div>';
+          return '<div class="timeline-item"><strong>模式切换</strong><div>' + escapeHtml(modeLabel(event.fromMode) + ' -> ' + modeLabel(event.toMode)) + '</div></div>';
         }
         if (event.type === 'artifact_finalized') {
           return '<div class="timeline-item"><strong>产物定稿</strong><div>' + escapeHtml(event.artifactType) + ' v' + escapeHtml(event.version) + '</div></div>';
@@ -901,12 +915,12 @@ export const renderSessionReplayPage = (sessionId: string) => layout('Replay', `
 
     function renderLegacyReplay(legacy) {
       document.getElementById('replayMeta').innerHTML =
-        '<div class="timeline-item"><strong>兼容旧版 workflow 记录</strong><div>' + escapeHtml(legacy.run.idea) + '</div></div>';
+        '<div class="timeline-item"><strong>旧版兼容记录</strong><div>' + escapeHtml(legacy.run.idea) + '</div></div>';
       document.getElementById('replayTimeline').innerHTML =
-        '<div class="timeline-item"><strong>Legacy Workflow</strong><div>' + escapeHtml(legacy.run.status) + '</div></div>';
+        '<div class="timeline-item"><strong>旧版流程</strong><div>' + escapeHtml(legacy.run.status) + '</div></div>';
       document.getElementById('replayArtifacts').innerHTML =
         legacy.result && legacy.result.decision
-          ? '<div class="timeline-item"><strong>Recommendation</strong><div>' + escapeHtml(legacy.result.decision.recommendation) + '</div></div>'
+          ? '<div class="timeline-item"><strong>建议</strong><div>' + escapeHtml(legacy.result.decision.recommendation) + '</div></div>'
           : '<div class="empty">旧记录里没有额外结果。</div>';
     }
 
