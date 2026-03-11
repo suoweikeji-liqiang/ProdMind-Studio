@@ -2,7 +2,7 @@
 
 ## Assessment Date
 
-2026-03-09
+2026-03-11
 
 ## Current Release Target
 
@@ -38,14 +38,18 @@ Still not ready for:
 
 ### Quality Gate
 
-- [x] `pnpm run check:all`
+- [x] `pnpm run check:all` — last verified 2026-03-11 (16/16 web tests, all packages green)
 
 ### User Journey
 
-- [x] Web home -> session/history direction
-- [x] legacy Web workflow/history path still works during migration
-- [x] CLI legacy workflow
-- [x] CLI history list -> history show
+- [x] Web topic input → session creation
+- [x] Session → mode switching (challenge / decision / requirement-build)
+- [x] Multi-round conversation within each mode
+- [x] Draft summaries and finalized artifact versions
+- [x] Session history list (`/sessions`)
+- [x] Session replay (`/sessions/:id/replay`)
+- [x] Legacy `/history` and `/results/:id` redirect correctly
+- [x] CLI legacy workflow as operator compat path
 
 ### Provider And Validation
 
@@ -62,7 +66,6 @@ Environment note:
 ## Known Limitations Allowed Into V1
 
 - single-user only
-- Web is still migrating from legacy workflow pages to session-first pages
 - CLI remains a secondary operator surface and legacy baseline
 - fake provider remains the default path
 - real-provider validation remains opt-in

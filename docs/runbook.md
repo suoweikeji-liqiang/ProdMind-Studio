@@ -50,8 +50,8 @@ node dist/index.js history show <runId>
 
 Use CLI when you need:
 
-- a terminal-driven legacy workflow run
-- history revisit from the command line
+- a terminal-driven legacy workflow run for operator debugging
+- reviewing run history from the command line
 - provider failure details and usage summary
 
 ## Fake Vs Real Provider
@@ -135,14 +135,16 @@ Notes:
 
 ### Web
 
-- `/sessions` should become the primary session history list
-- `/sessions/:id/replay` should become the primary replay path
-- legacy `/history` and `/results/:id` remain compatibility paths during migration
+- `/sessions` is the primary session history list
+- `/sessions/:id` reopens the live session
+- `/sessions/:id/replay` is the primary replay path
+- Legacy `/history` and `/results/:id` redirect to the session paths automatically
 
 ### CLI
 
 - `history list` shows run status, result summary, and revisit guidance
 - `history show <runId>` shows phase status, artifacts, provider reliability, and next steps
+- These commands show legacy workflow records; new sessions are managed from Web
 
 ## Failure And Recovery Semantics
 

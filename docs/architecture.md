@@ -101,4 +101,4 @@ The long-term primary model should be:
 - `ModeState`
 - `ArtifactVersion`
 
-The current `WorkflowRun` / `WorkflowResult` model should be treated as legacy compatibility data while the product migrates.
+The legacy `WorkflowRun` / `WorkflowResult` model remains available as a backward compatibility layer for CLI operator records. It is not part of the primary session data model.

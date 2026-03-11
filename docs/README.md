@@ -37,9 +37,9 @@ Documentation is grouped around the current conversation-first V1 direction: a t
 - [observability-standards.md](observability-standards.md)
 - [test-layout.md](test-layout.md)
 
-## Migration
+## Historical Migration Records
 
-- [migration-plan.md](migration-plan.md)
+- [migration-plan.md](migration-plan.md) -- full phase progression log (migration complete)
 - [phase4c-completion-report.md](phase4c-completion-report.md)
 - [phase4c1-completion-report.md](phase4c1-completion-report.md)
 - [phase5a-completion-report.md](phase5a-completion-report.md)
@@ -51,4 +51,6 @@ Documentation is grouped around the current conversation-first V1 direction: a t
 
 - [plans/2026-03-09-v1-sprint-single-user-workbench-design.md](plans/2026-03-09-v1-sprint-single-user-workbench-design.md)
 - [plans/2026-03-09-v1-sprint-single-user-workbench-plan.md](plans/2026-03-09-v1-sprint-single-user-workbench-plan.md)
+- [plans/2026-03-11-session-shell-chinese-consistency-design.md](plans/2026-03-11-session-shell-chinese-consistency-design.md)
+- [plans/2026-03-11-session-shell-chinese-consistency.md](plans/2026-03-11-session-shell-chinese-consistency.md)
 - [ci-plan.md](ci-plan.md)

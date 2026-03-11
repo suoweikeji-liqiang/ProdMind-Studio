@@ -64,7 +64,7 @@ This is a shell correction, not a kernel rewrite.
 
 ## Phase Roadmap
 
-## Phase 6: Conversation-First Product Reset (PLANNED)
+## Phase 6: Conversation-First Product Reset (COMPLETED)
 
 ### Goal
 - Move the product from workflow-runner semantics to session semantics without discarding the extracted engines.
@@ -291,12 +291,12 @@ From `prodmind-v2`:
 - Risk: parser fragility from prompt format drift.
   - Mitigation: parser tests with variant outputs.
 
-## Phase 4A: CLI Composition Layer (IN PROGRESS)
+## Phase 4A: CLI Composition Layer (COMPLETED)
 
 ### Goal
 - Implement thin CLI composition layer to connect challenge → decision → asset into executable main path.
 
-### Status: IN PROGRESS (2026-03-07)
+### Status: COMPLETED
 
 ### Scope
 - ✅ Define CLI boundary (composition only, no engine logic)
@@ -324,12 +324,12 @@ From `prodmind-v2`:
 - Phase 4B: Web UI composition layer
 - Phase 5: Convergence and hardening
 
-## Phase 4B: Web Composition Layer (IN PROGRESS)
+## Phase 4B: Web Composition Layer (COMPLETED)
 
 ### Goal
 - Implement thin Web composition layer that wraps validated CLI workflow into minimal usable Web interface.
 
-### Status: IN PROGRESS (2026-03-07)
+### Status: COMPLETED
 
 ### Scope
 - ✅ Define Web composition boundary (see phase4b-web-boundary.md)
