@@ -1,3 +1,8 @@
+/**
+ * @deprecated Compatibility layer — serves legacy /api/workflow clients (CLI, pre-migration scripts).
+ * New product code should use /api/sessions instead.
+ * This router is intentionally kept for backward compatibility; do NOT add new product features here.
+ */
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { runChallengeRound, buildChallengeSummary } from '@prodmind/challenge-engine';
