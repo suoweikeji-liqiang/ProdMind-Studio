@@ -7,6 +7,8 @@ import type {
   ModeMessage,
   ModeState,
   RoleIdentity,
+  SessionPhase,
+  SessionInteractionState,
   SharedContext,
 } from '@prodmind/shared-types';
 
@@ -20,6 +22,71 @@ const persistence = createSessionStore();
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function deriveInteractionState(
+  session: Pick<ConversationSession, 'status' | 'currentPhase'>
+): SessionInteractionState {
+  if (session.status === 'archived') {
+    return 'completed';
+  }
+
+  if (session.status === 'failed') {
+    return 'blocked';
+  }
+
+  if (
+    session.currentPhase === 'waiting_alternative_hypothesis_resolution' ||
+    session.currentPhase === 'waiting_false_consensus_break' ||
+    session.currentPhase === 'waiting_tech_escape_response'
+  ) {
+    return 'blocked';
+  }
+
+  if (
+    session.currentPhase === 'waiting_round_decision' ||
+    session.currentPhase === 'waiting_decision_resolution' ||
+    session.currentPhase === 'ready_for_downstream_or_finalize' ||
+    session.currentPhase === 'artifact_finalized'
+  ) {
+    return 'ready_to_finalize';
+  }
+
+  if (
+    session.currentPhase === 'architect_framing' ||
+    session.currentPhase === 'objection_generation' ||
+    session.currentPhase === 'grounding' ||
+    session.currentPhase === 'decision_frame_generation' ||
+    session.currentPhase === 'tradeoff_analysis' ||
+    session.currentPhase === 'recommendation_synthesis' ||
+    session.currentPhase === 'artifact_scope_detection' ||
+    session.currentPhase === 'draft_generation'
+  ) {
+    return 'running_ai_step';
+  }
+
+  return 'waiting_user_input';
+}
+
+function getInitialPhaseState(mode: ConversationMode): Pick<ConversationSession, 'currentPhase' | 'requiredUserAction'> {
+  if (mode === 'decision') {
+    return {
+      currentPhase: 'decision_prompt_submitted',
+      requiredUserAction: '请输入你的决策问题',
+    };
+  }
+
+  if (mode === 'requirement-build') {
+    return {
+      currentPhase: 'artifact_goal_submitted',
+      requiredUserAction: '请输入你要沉淀的资产目标',
+    };
+  }
+
+  return {
+    currentPhase: 'topic_submitted',
+    requiredUserAction: '请输入你的议题或想法',
+  };
 }
 
 function createEmptyModeState(mode: ConversationMode): ModeState {
@@ -48,11 +115,15 @@ async function loadModeStates(projectPath: string, sessionId: string): Promise<P
 
 export async function createLiveSession(projectPath: string, topic: string): Promise<LiveSessionState> {
   const timestamp = nowIso();
+  const initialPhase = getInitialPhaseState('challenge');
   const session: ConversationSession = {
     sessionId: Date.now().toString(),
     topic,
     status: 'active',
     currentMode: 'challenge',
+    currentPhase: initialPhase.currentPhase,
+    interactionState: 'waiting_user_input',
+    requiredUserAction: '请输入你的议题或想法',
     sharedContext: {
       hardConstraints: [],
       confirmedFacts: [],
@@ -100,14 +171,24 @@ export async function switchLiveSessionMode(projectPath: string, sessionId: stri
 
   const previousMode = existing.session.currentMode;
   const timestamp = nowIso();
+  const initialPhase = getInitialPhaseState(mode);
+  const nextModeState = existing.modeStates[mode] ?? createEmptyModeState(mode);
+  const { nextRecommendedMode: _ignoredNextRecommendedMode, ...restSession } = existing.session;
   const updatedSession: ConversationSession = {
-    ...existing.session,
+    ...restSession,
     currentMode: mode,
+    currentPhase: initialPhase.currentPhase,
+    interactionState: deriveInteractionState({
+      status: restSession.status,
+      currentPhase: initialPhase.currentPhase,
+    }),
+    requiredUserAction: initialPhase.requiredUserAction,
+    lastCompletedStep: `mode switched to ${mode}`,
     updatedAt: timestamp,
     lastActiveAt: timestamp,
   };
   existing.session = updatedSession;
-  existing.modeStates[mode] = existing.modeStates[mode] ?? createEmptyModeState(mode);
+  existing.modeStates[mode] = nextModeState;
 
   const event: ConversationEvent = {
     type: 'mode_switched',
@@ -120,6 +201,7 @@ export async function switchLiveSessionMode(projectPath: string, sessionId: stri
   };
 
   await persistence.saveSession(projectPath, updatedSession);
+  await persistence.saveModeState(projectPath, sessionId, nextModeState);
   await persistence.appendEvent(projectPath, event);
   liveSessions.set(sessionId, existing);
   return existing;
@@ -145,6 +227,7 @@ export async function appendLiveUserMessage(projectPath: string, sessionId: stri
 
   const updatedSession: ConversationSession = {
     ...existing.session,
+    interactionState: 'running_ai_step',
     updatedAt: nowIso(),
     lastActiveAt: nowIso(),
   };
@@ -330,4 +413,54 @@ export async function updateLiveSessionSharedContext(
 
   liveSessions.set(sessionId, existing);
   return { state: existing, event };
+}
+
+export async function transitionSessionPhase(
+  projectPath: string,
+  sessionId: string,
+  toPhase: SessionPhase,
+  requiredUserAction: string,
+  lastCompletedStep?: string,
+  nextRecommendedMode?: ConversationMode
+): Promise<LiveSessionState | null> {
+  const existing = await getLiveSession(projectPath, sessionId);
+  if (!existing) {
+    return null;
+  }
+
+  const fromPhase = existing.session.currentPhase;
+  const timestamp = nowIso();
+  const { nextRecommendedMode: _ignoredNextRecommendedMode, ...restSession } = existing.session;
+  const updatedSession: ConversationSession = {
+    ...restSession,
+    currentPhase: toPhase,
+    interactionState: deriveInteractionState({
+      status: restSession.status,
+      currentPhase: toPhase,
+    }),
+    requiredUserAction,
+    ...(lastCompletedStep !== undefined ? { lastCompletedStep } : {}),
+    ...(nextRecommendedMode !== undefined ? { nextRecommendedMode } : {}),
+    updatedAt: timestamp,
+    lastActiveAt: timestamp,
+  };
+
+  const event: ConversationEvent = {
+    type: 'phase_transition',
+    eventId: `${sessionId}-phase-${Date.now()}`,
+    sessionId,
+    mode: existing.session.currentMode,
+    timestamp,
+    fromPhase,
+    toPhase,
+    requiredUserAction,
+  };
+
+  existing.session = updatedSession;
+
+  await persistence.saveSession(projectPath, updatedSession);
+  await persistence.appendEvent(projectPath, event);
+
+  liveSessions.set(sessionId, existing);
+  return existing;
 }

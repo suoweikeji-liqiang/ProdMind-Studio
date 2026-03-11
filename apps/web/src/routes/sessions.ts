@@ -1,20 +1,46 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
+import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { runChallengeRound } from '@prodmind/challenge-engine';
-import { buildDecisionModeOutput, createDecisionSession, runDecisionOrchestration } from '@prodmind/decision-engine';
+import { runChallengeRound, runArchitectFraming, runGrounding, runObjectionGeneration } from '@prodmind/challenge-engine';
+import {
+  runDecisionFrameGeneration,
+  runRecommendationSynthesis,
+  runTradeoffAnalysis,
+} from '@prodmind/decision-engine';
 import { createRuntimeAdapter } from '@prodmind/llm-adapter';
-import { createHistoryStore, createProjectStore, createSessionStore, writeRequirementDraftPack } from '@prodmind/asset-engine';
-import type { ArtifactVersion, ConversationSession, ModeMessage, ModeState, ProjectState, RoleIdentity, SharedContext } from '@prodmind/shared-types';
-import { ConversationModeSchema } from '@prodmind/shared-types';
+import type { LLMAdapter } from '@prodmind/llm-adapter';
+import { createAssetWriter, createHistoryStore, createProjectStore, createSessionStore } from '@prodmind/asset-engine';
+import type {
+  ArtifactVersion,
+  ChallengeConflict,
+  ConversationMode,
+  ConversationSession,
+  DecisionFrame,
+  ModeMessage,
+  ModeState,
+  ProjectState,
+  ProviderCapabilityProfile,
+  ProviderExecutionSummary,
+  RoleIdentity,
+  SharedContext,
+  TradeoffResult,
+} from '@prodmind/shared-types';
+import {
+  ConversationModeSchema,
+  DecisionFrameSchema,
+  TradeoffResultSchema,
+} from '@prodmind/shared-types';
 import { loadProviderConfig } from '../config.js';
 import {
   appendLiveRoleMessages,
   appendLiveUserMessage,
   createLiveSession,
   getLiveSession,
+  type LiveSessionState,
   replaceLiveModeState,
   switchLiveSessionMode,
+  transitionSessionPhase,
   updateLiveSessionSharedContext,
 } from '../state/session-store.js';
 
@@ -34,18 +60,35 @@ const CHALLENGE_FAKE_RESPONSE = [
   '最小动作：先在内部团队试跑 1 周，再根据使用反馈调节角色密度。',
 ].join('\n');
 
-const DECISION_FAKE_RESPONSE = [
-  'hypothesis: session-first history improves continuity',
-  'risk: switching modes too early may fragment the discussion',
-  'option: keep one topic per session and isolate mode-local history',
-  'summary: use a single session shell, but keep challenge and decision state separated',
-].join('\n');
+const DECISION_FAKE_FRAME: DecisionFrame = {
+  options: ['buy an off-the-shelf system', 'build an internal system'],
+  criteria: ['delivery speed', 'total cost', 'future extensibility'],
+  constraints: ['limited implementation bandwidth', 'budget discipline'],
+  assumptions: ['the company needs a shared management workflow soon'],
+};
+
+const DECISION_FAKE_TRADEOFF: TradeoffResult = {
+  analysis: {
+    'buy an off-the-shelf system': 'Ships faster and lowers delivery risk, but limits custom fit.',
+    'build an internal system': 'Improves custom fit and control, but costs more time and coordination.',
+  },
+  winners: ['buy an off-the-shelf system'],
+  losers: ['build an internal system'],
+};
+
+const DECISION_FAKE_RESPONSE = 'Recommendation: start with an off-the-shelf system, then only build custom modules where the workflow is truly strategic.';
 
 const CHALLENGE_ROLE_SET: RoleIdentity[] = [
   { roleId: 'architect', roleName: '架构师' },
   { roleId: 'assassin', roleName: '刺客' },
   { roleId: 'userGhost', roleName: '用户幽灵' },
   { roleId: 'grounder', roleName: '锚点官' },
+];
+
+const DECISION_ROLE_SET: RoleIdentity[] = [
+  { roleId: 'solution', roleName: '方案官' },
+  { roleId: 'tradeoff', roleName: '权衡官' },
+  { roleId: 'verdict', roleName: '裁决官' },
 ];
 
 const REQUIREMENT_ROLE_SET: RoleIdentity[] = [
@@ -56,8 +99,68 @@ const REQUIREMENT_ROLE_SET: RoleIdentity[] = [
 ];
 
 const REQUIREMENT_ARTIFACT_TYPES = ['idea', 'spec', 'acceptance', 'tasks'] as const;
+type ChallengeAction = 'raw_topic' | 'problem_correction' | 'objection_response' | 'round_resolution';
+type DecisionAction = 'decision_problem' | 'frame_correction' | 'priority_adjustment' | 'decision_resolution';
 type RequirementArtifactType = (typeof REQUIREMENT_ARTIFACT_TYPES)[number];
+type RequirementAction = 'artifact_goal' | 'artifact_selection' | 'draft_revision' | 'finalization_note';
 type SharedContextField = keyof SharedContext;
+
+const CHALLENGE_INTERRUPT_PHASES = [
+  'waiting_alternative_hypothesis_resolution',
+  'waiting_false_consensus_break',
+  'waiting_tech_escape_response',
+] as const;
+
+interface RequirementDraftArtifact {
+  artifactType: RequirementArtifactType;
+  title: string;
+  path: string;
+  content: string;
+  updatedAt: string;
+}
+
+const REQUIREMENT_ARTIFACT_TITLES: Record<RequirementArtifactType, string> = {
+  idea: 'Idea Draft',
+  spec: 'Spec Draft',
+  acceptance: 'Acceptance Draft',
+  tasks: 'Tasks Draft',
+};
+
+const REQUIREMENT_ROLE_BY_ARTIFACT: Record<RequirementArtifactType, RoleIdentity> = {
+  idea: { roleId: 'requirements', roleName: '需求师' },
+  spec: { roleId: 'user-representative', roleName: '用户代表' },
+  tasks: { roleId: 'implementation', roleName: '实施工程师' },
+  acceptance: { roleId: 'acceptance', roleName: '验收官' },
+};
+
+async function writeRequirementDraftArtifact(
+  projectDir: string,
+  state: ProjectState,
+  artifactType: RequirementArtifactType
+): Promise<RequirementDraftArtifact> {
+  await fs.mkdir(projectDir, { recursive: true });
+  const writer = createAssetWriter();
+
+  let artifactPath: string;
+  if (artifactType === 'idea') {
+    artifactPath = await writer.writeIdea(projectDir, state);
+  } else if (artifactType === 'spec') {
+    artifactPath = await writer.writeSpec(projectDir, state);
+  } else if (artifactType === 'acceptance') {
+    artifactPath = await writer.writeAcceptance(projectDir, state);
+  } else {
+    artifactPath = await writer.writeTasks(projectDir, state);
+  }
+
+  const content = await fs.readFile(artifactPath, 'utf8');
+  return {
+    artifactType,
+    title: REQUIREMENT_ARTIFACT_TITLES[artifactType],
+    path: artifactPath,
+    content,
+    updatedAt: new Date().toISOString(),
+  };
+}
 
 const SHARED_CONTEXT_PREFIXES: Record<string, SharedContextField> = {
   fact: 'confirmedFacts',
@@ -96,9 +199,61 @@ function createChallengeAdapter() {
   );
 }
 
-function createDecisionAdapter() {
+function createDecisionAdapter(): LLMAdapter {
+  const config = loadProviderConfig();
+  if (config.mode === 'fake') {
+    const metadata: ProviderCapabilityProfile = {
+      providerName: 'fake',
+      modelName: 'fake-decision',
+      enabled: true,
+      capabilities: {
+        structuredOutput: true,
+        streaming: true,
+      },
+      reliability: {
+        defaultTimeoutMs: 100,
+        maxTimeoutMs: 100,
+        defaultMaxRetries: 0,
+        maxRetriesLimit: 0,
+        fallbackEligible: false,
+        fallbackMode: 'disabled',
+      },
+      usage: {
+        tokenAccounting: 'estimated',
+        costAccounting: 'unavailable',
+      },
+    };
+
+    return {
+      async streamText(messages, onToken) {
+        const prompt = messages[messages.length - 1]?.content ?? '';
+        const response = prompt.includes('decision judge')
+          ? DECISION_FAKE_RESPONSE
+          : 'Decision step complete.';
+        for (const token of response) {
+          onToken(token);
+        }
+        return response;
+      },
+      async generateStructured(messages, schema) {
+        const prompt = messages[messages.length - 1]?.content ?? '';
+        const payload = prompt.includes('structured decision frame')
+          ? DECISION_FAKE_FRAME
+          : DECISION_FAKE_TRADEOFF;
+        return schema.parse(payload);
+      },
+      getMetadata() {
+        return metadata;
+      },
+      getExecutionLog(): ProviderExecutionSummary[] {
+        return [];
+      },
+      clearExecutionLog(): void {},
+    };
+  }
+
   return createRuntimeAdapter(
-    loadProviderConfig(),
+    config,
     { default: DECISION_FAKE_RESPONSE },
     {
       usage: {
@@ -333,6 +488,142 @@ function buildRequirementDraftSummary(drafts: Record<RequirementArtifactType, { 
   return `requirement-build 已更新 ${REQUIREMENT_ARTIFACT_TYPES.length} 份草稿：${REQUIREMENT_ARTIFACT_TYPES.join(' / ')}。最近更新时间 ${drafts.spec.updatedAt}。`;
 }
 
+function parseRequirementArtifactType(content: string): RequirementArtifactType | null {
+  const normalized = content.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  if (REQUIREMENT_ARTIFACT_TYPES.includes(normalized as RequirementArtifactType)) {
+    return normalized as RequirementArtifactType;
+  }
+  if (normalized.includes('idea') || normalized.includes('想法')) {
+    return 'idea';
+  }
+  if (normalized.includes('spec') || normalized.includes('规格') || normalized.includes('规约')) {
+    return 'spec';
+  }
+  if (normalized.includes('acceptance') || normalized.includes('验收')) {
+    return 'acceptance';
+  }
+  if (normalized.includes('tasks') || normalized.includes('任务')) {
+    return 'tasks';
+  }
+
+  return null;
+}
+
+function resolveRequirementAction(rawAction: string | undefined, currentPhase: string): RequirementAction {
+  if (
+    rawAction === 'artifact_goal' ||
+    rawAction === 'artifact_selection' ||
+    rawAction === 'draft_revision' ||
+    rawAction === 'finalization_note'
+  ) {
+    return rawAction;
+  }
+
+  if (currentPhase === 'waiting_user_artifact_selection') {
+    return 'artifact_selection';
+  }
+  if (currentPhase === 'waiting_user_draft_revision' || currentPhase === 'ready_for_downstream_or_finalize') {
+    return 'draft_revision';
+  }
+
+  return 'artifact_goal';
+}
+
+function isChallengeInterruptPhase(currentPhase: string): currentPhase is (typeof CHALLENGE_INTERRUPT_PHASES)[number] {
+  return CHALLENGE_INTERRUPT_PHASES.includes(currentPhase as (typeof CHALLENGE_INTERRUPT_PHASES)[number]);
+}
+
+function resolveChallengeAction(rawAction: string | undefined, currentPhase: string): ChallengeAction {
+  if (
+    rawAction === 'raw_topic' ||
+    rawAction === 'problem_correction' ||
+    rawAction === 'objection_response' ||
+    rawAction === 'round_resolution'
+  ) {
+    return rawAction;
+  }
+
+  if (currentPhase === 'waiting_user_problem_correction') {
+    return 'problem_correction';
+  }
+  if (currentPhase === 'waiting_user_objection_response' || isChallengeInterruptPhase(currentPhase)) {
+    return 'objection_response';
+  }
+  if (currentPhase === 'waiting_round_decision') {
+    return 'round_resolution';
+  }
+
+  return 'raw_topic';
+}
+
+function chooseNextRequirementArtifact(existingDraftArtifacts: string[]): RequirementArtifactType {
+  for (const artifactType of REQUIREMENT_ARTIFACT_TYPES) {
+    if (!existingDraftArtifacts.includes(artifactType)) {
+      return artifactType;
+    }
+  }
+  const currentArtifact = existingDraftArtifacts[existingDraftArtifacts.length - 1];
+  return parseRequirementArtifactType(currentArtifact ?? '') ?? 'spec';
+}
+
+function mergeRequirementDraftArtifacts(
+  existingDraftArtifacts: string[],
+  artifactType: RequirementArtifactType
+): RequirementArtifactType[] {
+  const set = new Set<RequirementArtifactType>();
+  for (const artifact of existingDraftArtifacts) {
+    const parsed = parseRequirementArtifactType(artifact);
+    if (parsed) {
+      set.add(parsed);
+    }
+  }
+  set.add(artifactType);
+  return REQUIREMENT_ARTIFACT_TYPES.filter((artifact) => set.has(artifact));
+}
+
+function buildRequirementGoalMessage(suggestedArtifact: RequirementArtifactType): ModeMessage {
+  return {
+    speaker: 'role',
+    roleId: 'requirements',
+    roleName: '需求师',
+    content: `我已记录你的 requirement 目标。建议先推进 ${suggestedArtifact} 层；请发送 action=artifact_selection 并确认层级。`,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+function buildRequirementRoleMessage(
+  artifactType: RequirementArtifactType,
+  draft: RequirementDraftArtifact,
+  mode: 'selection' | 'revision'
+): ModeMessage {
+  const role = REQUIREMENT_ROLE_BY_ARTIFACT[artifactType];
+  const actionLabel = mode === 'selection' ? '已生成' : '已更新';
+  return {
+    speaker: 'role',
+    roleId: role.roleId,
+    roleName: role.roleName,
+    content: `${actionLabel} ${artifactType} 草稿。\n${summarizeDraftContent(draft.content, `${artifactType} 草稿待完善。`)}`,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+function buildRequirementDraftSummaryByArtifact(
+  artifactType: RequirementArtifactType,
+  draft: RequirementDraftArtifact,
+  mode: 'selection' | 'revision' | 'goal'
+): string {
+  if (mode === 'goal') {
+    return 'requirement-build 已记录目标，等待你选择要推进的资产层。';
+  }
+
+  const actionLabel = mode === 'selection' ? '已生成' : '已更新';
+  return `requirement-build ${actionLabel} ${artifactType} 草稿。最近更新时间 ${draft.updatedAt}。`;
+}
+
 function buildDecisionProblem(session: ConversationSession, content: string): string {
   const sharedContextPrompt = buildSharedContextPrompt(session.sharedContext);
   return [
@@ -341,6 +632,254 @@ function buildDecisionProblem(session: ConversationSession, content: string): st
     `Latest user input: ${content}`,
     sharedContextPrompt,
   ].filter(Boolean).join('\n');
+}
+
+function getInterruptTransition(conflicts: ChallengeConflict[] | undefined): {
+  phase:
+    | 'waiting_tech_escape_response'
+    | 'waiting_alternative_hypothesis_resolution'
+    | 'waiting_false_consensus_break';
+  requiredUserAction: string;
+  lastCompletedStep: string;
+} | null {
+  if (!conflicts || conflicts.length === 0) {
+    return null;
+  }
+
+  if (conflicts.some((conflict) => conflict.type === 'tech_escape')) {
+    return {
+      phase: 'waiting_tech_escape_response',
+      requiredUserAction: 'Respond to the objections without escaping into technology-first claims.',
+      lastCompletedStep: 'tech escape detected',
+    };
+  }
+
+  if (conflicts.some((conflict) => conflict.type === 'alternative_hypothesis')) {
+    return {
+      phase: 'waiting_alternative_hypothesis_resolution',
+      requiredUserAction: 'Address the stronger alternative hypothesis before continuing.',
+      lastCompletedStep: 'alternative hypothesis detected',
+    };
+  }
+
+  if (conflicts.some((conflict) => conflict.type === 'consensus_alert')) {
+    return {
+      phase: 'waiting_false_consensus_break',
+      requiredUserAction: 'Break the false consensus and state what still does not hold.',
+      lastCompletedStep: 'false consensus detected',
+    };
+  }
+
+  return null;
+}
+
+function hasCompletedChallengeRound(state: LiveSessionState): boolean {
+  return (state.modeStates.challenge?.messages ?? []).some(
+    (message) => message.speaker === 'role' && message.roleId === 'grounder',
+  );
+}
+
+function hasDecisionVerdict(state: LiveSessionState): boolean {
+  return (state.modeStates.decision?.messages ?? []).some(
+    (message) => message.speaker === 'role' && message.roleId === 'verdict',
+  );
+}
+
+function buildSessionGuidance(state: LiveSessionState): {
+  modeTransitionWarning?: string;
+  recommendedRollbackMode?: ConversationMode;
+} {
+  if (state.session.currentMode === 'decision' && !hasCompletedChallengeRound(state)) {
+    return {
+      modeTransitionWarning: 'challenge 尚未完成至少一轮问题定义与质疑回应，当前进入 decision 的比较框架可能不稳定。',
+      recommendedRollbackMode: 'challenge',
+    };
+  }
+
+  if (state.session.currentMode === 'requirement-build' && !hasDecisionVerdict(state)) {
+    return {
+      modeTransitionWarning: 'decision 尚未形成明确 recommendation，当前进入 requirement-build 容易把未定方案过早沉淀成资产。',
+      recommendedRollbackMode: 'decision',
+    };
+  }
+
+  if (isChallengeInterruptPhase(state.session.currentPhase)) {
+    if (state.session.currentPhase === 'waiting_tech_escape_response') {
+      return {
+        modeTransitionWarning: '系统检测到 technology-first 逃逸，建议先回应真实需求和验证路径，再继续收敛。',
+      };
+    }
+    if (state.session.currentPhase === 'waiting_alternative_hypothesis_resolution') {
+      return {
+        modeTransitionWarning: '系统检测到更强的替代假设，建议先处理这个分歧，再决定是否进入下一模式。',
+      };
+    }
+    return {
+      modeTransitionWarning: '系统检测到伪共识，建议先明确仍然存在的分歧点。',
+    };
+  }
+
+  return {};
+}
+
+function buildSessionView(state: LiveSessionState) {
+  return {
+    ...state.session,
+    ...buildSessionGuidance(state),
+  };
+}
+
+function resolveDecisionAction(rawAction: string | undefined, currentPhase: string): DecisionAction {
+  if (
+    rawAction === 'decision_problem' ||
+    rawAction === 'frame_correction' ||
+    rawAction === 'priority_adjustment' ||
+    rawAction === 'decision_resolution'
+  ) {
+    return rawAction;
+  }
+
+  if (currentPhase === 'waiting_user_frame_confirmation') {
+    return 'frame_correction';
+  }
+  if (currentPhase === 'waiting_user_priority_adjustment') {
+    return 'priority_adjustment';
+  }
+  if (currentPhase === 'waiting_decision_resolution') {
+    return 'decision_resolution';
+  }
+
+  return 'decision_problem';
+}
+
+function buildDecisionFrameMessage(frame: DecisionFrame): ModeMessage {
+  return {
+    speaker: 'role',
+    roleId: 'solution',
+    roleName: '方案官',
+    content: [
+      '决策框架已生成：',
+      `候选项: ${frame.options.join(' / ')}`,
+      `比较维度: ${frame.criteria.join(' / ')}`,
+      `约束: ${frame.constraints.join(' / ')}`,
+      `假设: ${frame.assumptions.join(' / ')}`,
+    ].join('\n'),
+    timestamp: new Date().toISOString(),
+  };
+}
+
+function buildTradeoffMessage(tradeoff: TradeoffResult): ModeMessage {
+  const analysisLines = Object.entries(tradeoff.analysis).map(([option, note]) => `${option}: ${note}`);
+  return {
+    speaker: 'role',
+    roleId: 'tradeoff',
+    roleName: '权衡官',
+    content: [
+      '权衡分析已完成：',
+      ...analysisLines,
+      `赢家: ${tradeoff.winners.join(' / ') || '无'}`,
+      `落后项: ${tradeoff.losers.join(' / ') || '无'}`,
+    ].join('\n'),
+    timestamp: new Date().toISOString(),
+  };
+}
+
+function buildDecisionRecommendationMessage(recommendation: string): ModeMessage {
+  return {
+    speaker: 'role',
+    roleId: 'verdict',
+    roleName: '裁决官',
+    content: recommendation,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+async function loadStoredDecisionFrame(projectPath: string, sessionId: string): Promise<DecisionFrame | null> {
+  const raw = await sessionPersistence.getDraftArtifact(projectPath, sessionId, 'decision', 'frame');
+  const parsed = DecisionFrameSchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
+}
+
+async function loadStoredTradeoff(projectPath: string, sessionId: string): Promise<TradeoffResult | null> {
+  const raw = await sessionPersistence.getDraftArtifact(projectPath, sessionId, 'decision', 'tradeoff');
+  const parsed = TradeoffResultSchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
+}
+
+async function finalizeRequirementArtifacts(projectPath: string, sessionId: string, note?: string) {
+  const state = await getLiveSession(projectPath, sessionId);
+  if (!state) {
+    return { error: 'Session not found', status: 404 as const };
+  }
+  if (state.session.currentMode !== 'requirement-build') {
+    return { error: 'Artifacts can only be finalized in requirement-build mode', status: 400 as const };
+  }
+
+  const drafts = await sessionPersistence.listDraftArtifacts(projectPath, sessionId, 'requirement-build');
+  if (Object.keys(drafts).length === 0) {
+    return { error: 'No draft artifacts available', status: 400 as const };
+  }
+
+  const finalizedLabels: string[] = [];
+  const finalizedArtifacts: RequirementArtifactType[] = [];
+  for (const artifactType of REQUIREMENT_ARTIFACT_TYPES) {
+    const draft = drafts[artifactType];
+    if (!draft || typeof draft !== 'object' || Array.isArray(draft)) {
+      continue;
+    }
+
+    const previousVersions = await sessionPersistence.listArtifactVersions(projectPath, sessionId, 'requirement-build', artifactType);
+    const nextVersion = previousVersions.length + 1;
+    const artifact: ArtifactVersion = {
+      artifactId: `${sessionId}-${artifactType}`,
+      sourceMode: 'requirement-build',
+      artifactType,
+      version: nextVersion,
+      content: draft as Record<string, unknown>,
+      finalizedAt: new Date().toISOString(),
+      ...(typeof note === 'string' && note.trim() ? { note: note.trim() } : {}),
+    };
+
+    await sessionPersistence.finalizeArtifact(projectPath, sessionId, artifact);
+    await sessionPersistence.appendEvent(projectPath, {
+      type: 'artifact_finalized',
+      eventId: `${sessionId}-${artifactType}-v${nextVersion}`,
+      sessionId,
+      mode: 'requirement-build',
+      timestamp: artifact.finalizedAt,
+      artifactId: artifact.artifactId,
+      artifactType,
+      version: nextVersion,
+    });
+    finalizedLabels.push(`${artifactType}:v${nextVersion}`);
+    finalizedArtifacts.push(artifactType);
+  }
+
+  const modeState = state.modeStates['requirement-build'];
+  if (!modeState) {
+    return { error: 'Mode state not found', status: 404 as const };
+  }
+
+  const updated = await replaceLiveModeState(projectPath, sessionId, {
+    ...modeState,
+    draftSummary: {
+      summary: finalizedLabels.length > 0
+        ? `Finalized ${finalizedLabels.join(', ')}`
+        : 'No requirement artifacts were finalized.',
+      updatedAt: new Date().toISOString(),
+    },
+    draftArtifacts: Array.from(new Set([...modeState.draftArtifacts, ...finalizedArtifacts])),
+    finalArtifacts: [...modeState.finalArtifacts, ...finalizedLabels],
+  });
+
+  if (!updated) {
+    return { error: 'Session not found', status: 404 as const };
+  }
+
+  return {
+    updated,
+    artifacts: await loadModeArtifacts(projectPath, sessionId, 'requirement-build'),
+  };
 }
 
 async function loadModeArtifacts(projectPath: string, sessionId: string, mode: ModeState['mode']) {
@@ -376,7 +915,7 @@ async function buildReplayPayload(projectPath: string, sessionId: string) {
   if (state) {
     return {
       source: 'session' as const,
-      session: state.session,
+      session: buildSessionView(state),
       events: await sessionPersistence.listEvents(projectPath, sessionId),
       modeStates: state.modeStates,
       artifacts: await loadReplayArtifacts(projectPath, sessionId),
@@ -406,7 +945,7 @@ sessionsRouter.post('/', async (req: Request, res: Response) => {
 
   const state = await createLiveSession(projectPath, topic);
   return res.status(201).json({
-    session: state.session,
+    session: buildSessionView(state),
     modeState: state.modeStates[state.session.currentMode] ?? null,
   });
 });
@@ -431,7 +970,7 @@ sessionsRouter.get('/:id', async (req: Request, res: Response) => {
   }
 
   return res.json({
-    session: state.session,
+    session: buildSessionView(state),
     modeState: state.modeStates[state.session.currentMode] ?? null,
     artifacts: await loadModeArtifacts(projectPath, id, state.session.currentMode),
   });
@@ -470,7 +1009,7 @@ sessionsRouter.post('/:id/mode', async (req: Request, res: Response) => {
   }
 
   return res.json({
-    session: state.session,
+    session: buildSessionView(state),
     modeState: state.modeStates[state.session.currentMode] ?? null,
     artifacts: await loadModeArtifacts(projectPath, id, state.session.currentMode),
   });
@@ -508,27 +1047,141 @@ sessionsRouter.post('/:id/messages', async (req: Request, res: Response) => {
   if (result.state.session.currentMode !== 'challenge') {
     if (result.state.session.currentMode === 'decision') {
       try {
+        const decisionAction = resolveDecisionAction(
+          (req.body as Record<string, string>).action,
+          result.state.session.currentPhase,
+        );
         const adapter = createDecisionAdapter();
-        const decisionSession = createDecisionSession(buildDecisionProblem(result.state.session, content));
-        const completed = await runDecisionOrchestration(decisionSession, adapter);
-        const decisionOutput = buildDecisionModeOutput(completed);
-        const updated = await appendLiveRoleMessages(projectPath, id, decisionOutput.messages, {
-          roleSet: decisionOutput.roleSet,
-          draftSummary: {
-            summary: appendSharedContextSummary(decisionOutput.draftSummary, result.state.session.sharedContext),
-            updatedAt: new Date().toISOString(),
-          },
-        });
 
-        if (!updated) {
-          return res.status(404).json({ error: 'Session not found' });
+        if (decisionAction === 'decision_problem') {
+          const frame = await runDecisionFrameGeneration(adapter, buildDecisionProblem(result.state.session, content));
+          await sessionPersistence.saveDraftArtifact(projectPath, id, 'decision', 'frame', frame);
+
+          const updated = await appendLiveRoleMessages(projectPath, id, [buildDecisionFrameMessage(frame)], {
+            roleSet: DECISION_ROLE_SET,
+            draftSummary: {
+              summary: appendSharedContextSummary(
+                'decision frame generated; waiting frame confirmation.',
+                result.state.session.sharedContext,
+              ),
+              updatedAt: new Date().toISOString(),
+            },
+          });
+
+          if (!updated) {
+            return res.status(404).json({ error: 'Session not found' });
+          }
+
+          await transitionSessionPhase(
+            projectPath,
+            id,
+            'waiting_user_frame_confirmation',
+            'Confirm or correct the decision frame.',
+            'decision frame generated',
+          );
+
+          const finalState = await getLiveSession(projectPath, id);
+          return res.status(200).json({
+            session: buildSessionView(finalState!),
+            modeState: finalState!.modeStates[finalState!.session.currentMode] ?? null,
+            event: result.event,
+            artifacts: await loadModeArtifacts(projectPath, id, finalState!.session.currentMode),
+          });
         }
 
+        if (decisionAction === 'frame_correction') {
+          const frame = await loadStoredDecisionFrame(projectPath, id);
+          if (!frame) {
+            return res.status(400).json({ error: 'decision frame missing; start with action=decision_problem' });
+          }
+
+          const tradeoff = await runTradeoffAnalysis(adapter, frame, content);
+          await sessionPersistence.saveDraftArtifact(projectPath, id, 'decision', 'tradeoff', tradeoff);
+
+          const updated = await appendLiveRoleMessages(projectPath, id, [buildTradeoffMessage(tradeoff)], {
+            roleSet: DECISION_ROLE_SET,
+            draftSummary: {
+              summary: appendSharedContextSummary(
+                'tradeoff analysis generated; waiting priority adjustment.',
+                result.state.session.sharedContext,
+              ),
+              updatedAt: new Date().toISOString(),
+            },
+          });
+
+          if (!updated) {
+            return res.status(404).json({ error: 'Session not found' });
+          }
+
+          await transitionSessionPhase(
+            projectPath,
+            id,
+            'waiting_user_priority_adjustment',
+            'Adjust priorities or weighting before recommendation.',
+            'tradeoff analysis completed',
+          );
+
+          const finalState = await getLiveSession(projectPath, id);
+          return res.status(200).json({
+            session: buildSessionView(finalState!),
+            modeState: finalState!.modeStates[finalState!.session.currentMode] ?? null,
+            event: result.event,
+            artifacts: await loadModeArtifacts(projectPath, id, finalState!.session.currentMode),
+          });
+        }
+
+        if (decisionAction === 'priority_adjustment') {
+          const frame = await loadStoredDecisionFrame(projectPath, id);
+          const tradeoff = await loadStoredTradeoff(projectPath, id);
+          if (!frame || !tradeoff) {
+            return res.status(400).json({ error: 'decision frame/tradeoff missing; complete earlier steps first' });
+          }
+
+          const recommendation = await runRecommendationSynthesis(adapter, frame, tradeoff);
+          const updated = await appendLiveRoleMessages(projectPath, id, [buildDecisionRecommendationMessage(recommendation)], {
+            roleSet: DECISION_ROLE_SET,
+            draftSummary: {
+              summary: appendSharedContextSummary(recommendation, result.state.session.sharedContext),
+              updatedAt: new Date().toISOString(),
+            },
+          });
+
+          if (!updated) {
+            return res.status(404).json({ error: 'Session not found' });
+          }
+
+          await transitionSessionPhase(
+            projectPath,
+            id,
+            'waiting_decision_resolution',
+            'Review the recommendation, then send action=decision_resolution or switch mode.',
+            'recommendation synthesized',
+            'requirement-build',
+          );
+
+          const finalState = await getLiveSession(projectPath, id);
+          return res.status(200).json({
+            session: buildSessionView(finalState!),
+            modeState: finalState!.modeStates[finalState!.session.currentMode] ?? null,
+            event: result.event,
+            artifacts: await loadModeArtifacts(projectPath, id, finalState!.session.currentMode),
+          });
+        }
+
+        await transitionSessionPhase(
+          projectPath,
+          id,
+          'decision_prompt_submitted',
+          'Enter the next decision problem or switch mode.',
+          'decision resolution recorded',
+        );
+
+        const finalState = await getLiveSession(projectPath, id);
         return res.status(200).json({
-          session: updated.state.session,
-          modeState: updated.state.modeStates[updated.state.session.currentMode] ?? null,
+          session: buildSessionView(finalState!),
+          modeState: finalState!.modeStates[finalState!.session.currentMode] ?? null,
           event: result.event,
-          artifacts: await loadModeArtifacts(projectPath, id, updated.state.session.currentMode),
+          artifacts: await loadModeArtifacts(projectPath, id, finalState!.session.currentMode),
         });
       } catch (error) {
         return res.status(502).json({
@@ -544,26 +1197,98 @@ sessionsRouter.post('/:id/messages', async (req: Request, res: Response) => {
           return res.status(404).json({ error: 'Mode state not found' });
         }
 
-        const projectState = buildRequirementProjectState(result.state.session, modeState, content);
-        const draftDir = path.join(projectPath, '.prodmind', 'sessions', id, 'workspace', 'requirement-build', 'draft');
-        const drafts = await writeRequirementDraftPack(draftDir, projectState);
-
-        await Promise.all(
-          REQUIREMENT_ARTIFACT_TYPES.map((artifactType) =>
-            sessionPersistence.saveDraftArtifact(projectPath, id, 'requirement-build', artifactType, drafts[artifactType])
-          )
+        const requirementAction = resolveRequirementAction(
+          (req.body as Record<string, string>).action,
+          result.state.session.currentPhase,
         );
+        const draftDir = path.join(projectPath, '.prodmind', 'sessions', id, 'workspace', 'requirement-build', 'draft');
 
-        const roleMessages = buildRequirementRoleMessages(drafts);
+        if (requirementAction === 'artifact_goal') {
+          const suggestedArtifact = parseRequirementArtifactType(content) ?? chooseNextRequirementArtifact(modeState.draftArtifacts);
+          const goalMessage = buildRequirementGoalMessage(suggestedArtifact);
+          const updated = await appendLiveRoleMessages(projectPath, id, [goalMessage], {
+            roleSet: REQUIREMENT_ROLE_SET,
+            draftSummary: {
+              summary: 'requirement-build goal captured; waiting artifact selection.',
+              updatedAt: new Date().toISOString(),
+            },
+          });
+          if (!updated) {
+            return res.status(404).json({ error: 'Session not found' });
+          }
+
+          await transitionSessionPhase(
+            projectPath,
+            id,
+            'waiting_user_artifact_selection',
+            'Select artifact layer (idea/spec/acceptance/tasks).',
+            'requirement goal captured',
+          );
+
+          const finalState = await getLiveSession(projectPath, id);
+          return res.status(200).json({
+            session: buildSessionView(finalState!),
+            modeState: finalState!.modeStates[finalState!.session.currentMode] ?? null,
+            event: result.event,
+            artifacts: await loadModeArtifacts(projectPath, id, 'requirement-build'),
+          });
+        }
+
+        if (requirementAction === 'finalization_note') {
+          const finalized = await finalizeRequirementArtifacts(projectPath, id, content);
+          if ('error' in finalized) {
+            return res.status(finalized.status ?? 500).json({ error: finalized.error });
+          }
+
+          await transitionSessionPhase(
+            projectPath,
+            id,
+            'artifact_finalized',
+            'Continue with artifact_goal or switch mode.',
+            'artifact finalized',
+          );
+
+          const finalState = await getLiveSession(projectPath, id);
+          return res.status(200).json({
+            session: buildSessionView(finalState!),
+            modeState: finalState!.modeStates[finalState!.session.currentMode] ?? null,
+            event: result.event,
+            artifacts: finalized.artifacts,
+          });
+        }
+
+        const explicitArtifact = parseRequirementArtifactType(content);
+        const artifactType = requirementAction === 'artifact_selection'
+          ? explicitArtifact
+          : explicitArtifact ?? parseRequirementArtifactType(modeState.draftArtifacts[modeState.draftArtifacts.length - 1] ?? '');
+        if (!artifactType) {
+          return res.status(400).json({
+            error: 'artifact type required (idea/spec/acceptance/tasks)',
+          });
+        }
+
+        const projectState = buildRequirementProjectState(result.state.session, modeState, content);
+        const draft = await writeRequirementDraftArtifact(draftDir, projectState, artifactType);
+        await sessionPersistence.saveDraftArtifact(projectPath, id, 'requirement-build', artifactType, draft);
+
+        const roleMessage = buildRequirementRoleMessage(
+          artifactType,
+          draft,
+          requirementAction === 'artifact_selection' ? 'selection' : 'revision',
+        );
         const updatedModeState: ModeState = {
           ...modeState,
           roleSet: REQUIREMENT_ROLE_SET,
-          messages: [...modeState.messages, ...roleMessages],
+          messages: [...modeState.messages, roleMessage],
           draftSummary: {
-            summary: buildRequirementDraftSummary(drafts),
+            summary: buildRequirementDraftSummaryByArtifact(
+              artifactType,
+              draft,
+              requirementAction === 'artifact_selection' ? 'selection' : 'revision',
+            ),
             updatedAt: new Date().toISOString(),
           },
-          draftArtifacts: [...REQUIREMENT_ARTIFACT_TYPES],
+          draftArtifacts: mergeRequirementDraftArtifacts(modeState.draftArtifacts, artifactType),
           finalArtifacts: modeState.finalArtifacts,
         };
 
@@ -572,33 +1297,45 @@ sessionsRouter.post('/:id/messages', async (req: Request, res: Response) => {
           return res.status(404).json({ error: 'Session not found' });
         }
 
-        const timestamp = new Date().toISOString();
-        for (const message of roleMessages) {
-          await sessionPersistence.appendEvent(projectPath, {
-            type: 'role_message',
-            eventId: `${id}-requirement-role-${message.roleId}-${Date.now()}`,
-            sessionId: id,
-            mode: 'requirement-build',
-            timestamp: message.timestamp,
-            roleId: message.roleId ?? 'unknown',
-            roleName: message.roleName ?? '系统',
-            content: message.content,
-          });
-        }
         await sessionPersistence.appendEvent(projectPath, {
-          type: 'draft_updated',
-          eventId: `${id}-requirement-draft-${Date.now()}`,
+          type: 'role_message',
+          eventId: `${id}-requirement-role-${artifactType}-${Date.now()}`,
           sessionId: id,
           mode: 'requirement-build',
-          timestamp,
+          timestamp: roleMessage.timestamp,
+          roleId: roleMessage.roleId ?? 'unknown',
+          roleName: roleMessage.roleName ?? 'system',
+          content: roleMessage.content,
+        });
+        await sessionPersistence.appendEvent(projectPath, {
+          type: 'draft_updated',
+          eventId: `${id}-requirement-draft-${artifactType}-${Date.now()}`,
+          sessionId: id,
+          mode: 'requirement-build',
+          timestamp: new Date().toISOString(),
           summary: updatedModeState.draftSummary?.summary ?? '',
         });
 
+        await transitionSessionPhase(
+          projectPath,
+          id,
+          requirementAction === 'artifact_selection'
+            ? 'waiting_user_draft_revision'
+            : 'ready_for_downstream_or_finalize',
+          requirementAction === 'artifact_selection'
+            ? 'Review draft then send action=draft_revision.'
+            : 'Continue with draft_revision or finalization_note.',
+          requirementAction === 'artifact_selection'
+            ? `draft generated: ${artifactType}`
+            : `draft updated: ${artifactType}`,
+        );
+
+        const finalState = await getLiveSession(projectPath, id);
         return res.status(200).json({
-          session: updated.session,
-          modeState: updated.modeStates[updated.session.currentMode] ?? null,
+          session: buildSessionView(finalState!),
+          modeState: finalState!.modeStates[finalState!.session.currentMode] ?? null,
           event: result.event,
-          artifacts: await loadModeArtifacts(projectPath, id, updated.session.currentMode),
+          artifacts: await loadModeArtifacts(projectPath, id, 'requirement-build'),
         });
       } catch (error) {
         return res.status(502).json({
@@ -607,54 +1344,183 @@ sessionsRouter.post('/:id/messages', async (req: Request, res: Response) => {
       }
     }
 
+
     return res.status(202).json({
-      session: result.state.session,
+      session: buildSessionView(result.state),
       modeState: result.state.modeStates[result.state.session.currentMode] ?? null,
       event: result.event,
     });
   }
 
+  const action = resolveChallengeAction(
+    (req.body as Record<string, string>).action,
+    result.state.session.currentPhase,
+  );
+  const adapter = createChallengeAdapter();
+
   try {
-    const challengeModeState = result.state.modeStates.challenge;
-    const roundNumber = challengeModeState?.messages.filter(message => message.speaker === 'user').length ?? 1;
-    const adapter = createChallengeAdapter();
-    const round = await runChallengeRound(
-      adapter,
-      {
-        idea: [result.state.session.topic, buildSharedContextPrompt(result.state.session.sharedContext)].filter(Boolean).join('\n\n'),
-        userConfirm: content,
-        userResponse: content,
-      },
-      roundNumber
-    );
+    if (action === 'raw_topic') {
+      const topic = [result.state.session.topic, content].filter(Boolean).join('\n');
+      const { architect } = await runArchitectFraming(adapter, topic);
+      const architectMessage: ModeMessage = {
+        speaker: 'role',
+        roleId: 'architect',
+        roleName: 'architect',
+        content: architect,
+        timestamp: new Date().toISOString(),
+      };
+      const updated = await appendLiveRoleMessages(projectPath, id, [architectMessage], {
+        roleSet: CHALLENGE_ROLE_SET,
+      });
+      if (!updated) {
+        return res.status(404).json({ error: 'Session not found' });
+      }
 
-    const roleMessages = buildChallengeRoleMessages(round);
-    const draftSummary = {
-      summary: buildChallengeDraftSummary(roundNumber, roleMessages, round.conflicts?.length ?? 0),
-      updatedAt: new Date().toISOString(),
-    };
+      await transitionSessionPhase(
+        projectPath,
+        id,
+        'waiting_user_problem_correction',
+        'Confirm or correct the problem framing.',
+        'architect framing completed',
+      );
 
-    const updated = await appendLiveRoleMessages(projectPath, id, roleMessages, {
-      roleSet: CHALLENGE_ROLE_SET,
-      draftSummary,
-    });
-
-    if (!updated) {
-      return res.status(404).json({ error: 'Session not found' });
+      const finalState = await getLiveSession(projectPath, id);
+      return res.status(200).json({
+        session: buildSessionView(finalState!),
+        modeState: finalState!.modeStates[finalState!.session.currentMode] ?? null,
+        event: result.event,
+        artifacts: await loadModeArtifacts(projectPath, id, 'challenge'),
+      });
     }
 
-    return res.status(200).json({
-      session: updated.state.session,
-      modeState: updated.state.modeStates[updated.state.session.currentMode] ?? null,
-      event: result.event,
-      round,
-      artifacts: await loadModeArtifacts(projectPath, id, updated.state.session.currentMode),
-    });
+    if (action === 'problem_correction') {
+      const challengeState = result.state.modeStates.challenge;
+      const architectMessage = challengeState?.messages.find(
+        (message) => message.speaker === 'role' && message.roleId === 'architect',
+      );
+      const architect = architectMessage?.content ?? result.state.session.topic;
+      const { assassin, userGhost } = await runObjectionGeneration(adapter, architect, content);
+      const timestamp = new Date().toISOString();
+      const roleMessages: ModeMessage[] = [
+        { speaker: 'role', roleId: 'assassin', roleName: 'assassin', content: assassin, timestamp },
+        { speaker: 'role', roleId: 'userGhost', roleName: 'userGhost', content: userGhost, timestamp },
+      ];
+      const updated = await appendLiveRoleMessages(projectPath, id, roleMessages, {
+        roleSet: CHALLENGE_ROLE_SET,
+      });
+      if (!updated) {
+        return res.status(404).json({ error: 'Session not found' });
+      }
+
+      await transitionSessionPhase(
+        projectPath,
+        id,
+        'waiting_user_objection_response',
+        'Respond to the objections above.',
+        'objections generated',
+      );
+
+      const finalState = await getLiveSession(projectPath, id);
+      return res.status(200).json({
+        session: buildSessionView(finalState!),
+        modeState: finalState!.modeStates[finalState!.session.currentMode] ?? null,
+        event: result.event,
+        artifacts: await loadModeArtifacts(projectPath, id, 'challenge'),
+      });
+    }
+
+    if (action === 'objection_response') {
+      const challengeState = result.state.modeStates.challenge;
+      const messages = challengeState?.messages ?? [];
+      const architect = messages.find((message) => message.roleId === 'architect')?.content ?? result.state.session.topic;
+      const assassin = messages.find((message) => message.roleId === 'assassin')?.content ?? '';
+      const userGhost = messages.find((message) => message.roleId === 'userGhost')?.content ?? '';
+      const userMessages = messages.filter((message) => message.speaker === 'user');
+      const userConfirm = userMessages.at(-2)?.content ?? userMessages.at(-1)?.content ?? '';
+      const { grounder, conflicts } = await runGrounding(adapter, architect, userConfirm, assassin, userGhost, content);
+      const grounderMessage: ModeMessage = {
+        speaker: 'role',
+        roleId: 'grounder',
+        roleName: 'grounder',
+        content: grounder,
+        timestamp: new Date().toISOString(),
+      };
+
+      const completedRoundCount = messages.filter(
+        (message) => message.speaker === 'role' && message.roleId === 'grounder',
+      ).length + 1;
+      const roundRoleMessages = [
+        ...messages.filter((message) => message.speaker === 'role'),
+        grounderMessage,
+      ];
+      const draftSummary = {
+        summary: buildChallengeDraftSummary(completedRoundCount, roundRoleMessages, conflicts?.length ?? 0),
+        updatedAt: new Date().toISOString(),
+      };
+
+      const updated = await appendLiveRoleMessages(projectPath, id, [grounderMessage], {
+        roleSet: CHALLENGE_ROLE_SET,
+        draftSummary,
+      });
+      if (!updated) {
+        return res.status(404).json({ error: 'Session not found' });
+      }
+
+      const interruptTransition = getInterruptTransition(conflicts);
+      if (interruptTransition) {
+        await transitionSessionPhase(
+          projectPath,
+          id,
+          interruptTransition.phase,
+          interruptTransition.requiredUserAction,
+          interruptTransition.lastCompletedStep,
+        );
+      } else {
+        await transitionSessionPhase(
+          projectPath,
+          id,
+          'waiting_round_decision',
+          'Round completed. Send action=round_resolution to continue or switch mode.',
+          'grounding completed',
+          'decision',
+        );
+      }
+
+      const finalState = await getLiveSession(projectPath, id);
+      return res.status(200).json({
+        session: buildSessionView(finalState!),
+        modeState: finalState!.modeStates[finalState!.session.currentMode] ?? null,
+        event: result.event,
+        conflicts,
+        artifacts: await loadModeArtifacts(projectPath, id, 'challenge'),
+      });
+    }
+
+    if (action === 'round_resolution') {
+      await transitionSessionPhase(
+        projectPath,
+        id,
+        'topic_submitted',
+        'Enter the next round topic/correction.',
+        'next round initialized',
+      );
+
+      const finalState = await getLiveSession(projectPath, id);
+      return res.status(200).json({
+        session: buildSessionView(finalState!),
+        modeState: finalState!.modeStates[finalState!.session.currentMode] ?? null,
+        event: result.event,
+        artifacts: await loadModeArtifacts(projectPath, id, 'challenge'),
+      });
+    }
+
+    return res.status(400).json({ error: `Unknown challenge action: ${action}` });
   } catch (error) {
     return res.status(502).json({
-      error: error instanceof Error ? error.message : 'Challenge round failed',
+      error: error instanceof Error ? error.message : 'Unknown error during challenge processing',
     });
   }
+
 
 });
 
@@ -666,69 +1532,24 @@ sessionsRouter.post('/:id/artifacts/finalize', async (req: Request, res: Respons
     return res.status(400).json({ error: 'Session ID required' });
   }
 
-  const state = await getLiveSession(projectPath, id);
-  if (!state) {
-    return res.status(404).json({ error: 'Session not found' });
-  }
-  if (state.session.currentMode !== 'requirement-build') {
-    return res.status(400).json({ error: 'Artifacts can only be finalized in requirement-build mode' });
+  const finalized = await finalizeRequirementArtifacts(projectPath, id, note);
+  if ('error' in finalized) {
+    return res.status(finalized.status ?? 500).json({ error: finalized.error });
   }
 
-  const drafts = await sessionPersistence.listDraftArtifacts(projectPath, id, 'requirement-build');
-  if (Object.keys(drafts).length === 0) {
-    return res.status(400).json({ error: 'No draft artifacts available' });
-  }
+  await transitionSessionPhase(
+    projectPath,
+    id,
+    'artifact_finalized',
+    'Continue with artifact_goal or switch mode.',
+    'artifact finalized',
+  );
 
-  const finalizedLabels: string[] = [];
-  for (const artifactType of REQUIREMENT_ARTIFACT_TYPES) {
-    const draft = drafts[artifactType];
-    if (!draft || typeof draft !== 'object' || Array.isArray(draft)) {
-      continue;
-    }
-
-    const previousVersions = await sessionPersistence.listArtifactVersions(projectPath, id, 'requirement-build', artifactType);
-    const nextVersion = previousVersions.length + 1;
-    const artifact: ArtifactVersion = {
-      artifactId: `${id}-${artifactType}`,
-      sourceMode: 'requirement-build',
-      artifactType,
-      version: nextVersion,
-      content: draft as Record<string, unknown>,
-      finalizedAt: new Date().toISOString(),
-      ...(typeof note === 'string' && note.trim() ? { note: note.trim() } : {}),
-    };
-
-    await sessionPersistence.finalizeArtifact(projectPath, id, artifact);
-    await sessionPersistence.appendEvent(projectPath, {
-      type: 'artifact_finalized',
-      eventId: `${id}-${artifactType}-v${nextVersion}`,
-      sessionId: id,
-      mode: 'requirement-build',
-      timestamp: artifact.finalizedAt,
-      artifactId: artifact.artifactId,
-      artifactType,
-      version: nextVersion,
-    });
-    finalizedLabels.push(`${artifactType}:v${nextVersion}`);
-  }
-
-  const modeState = state.modeStates['requirement-build'];
-  if (!modeState) {
-    return res.status(404).json({ error: 'Mode state not found' });
-  }
-
-  const updated = await replaceLiveModeState(projectPath, id, {
-    ...modeState,
-    draftArtifacts: [...REQUIREMENT_ARTIFACT_TYPES],
-    finalArtifacts: [...modeState.finalArtifacts, ...finalizedLabels],
-  });
-  if (!updated) {
-    return res.status(404).json({ error: 'Session not found' });
-  }
+  const finalState = await getLiveSession(projectPath, id);
 
   return res.status(200).json({
-    session: updated.session,
-    modeState: updated.modeStates[updated.session.currentMode] ?? null,
-    artifacts: await loadModeArtifacts(projectPath, id, updated.session.currentMode),
+    session: buildSessionView(finalState ?? finalized.updated),
+    modeState: (finalState ?? finalized.updated).modeStates[(finalState ?? finalized.updated).session.currentMode] ?? null,
+    artifacts: finalized.artifacts,
   });
 });

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ProviderCapabilityProfile, ProviderExecutionSummary } from '@prodmind/shared-types';
 import type { LLMAdapter, LLMMessage, LLMRequestOptions } from '@prodmind/llm-adapter';
 import { createDecisionSession } from './session.js';
-import { buildDecisionModeOutput, runDecisionStep } from './orchestrator.js';
+import { buildDecisionModeOutput, runDecisionOrchestration, runDecisionStep } from './orchestrator.js';
 
 function createRecordingAdapter() {
   let lastOptions: LLMRequestOptions | undefined;
@@ -104,10 +104,26 @@ describe('Decision Capability Requirements', () => {
 
     const view = buildDecisionModeOutput(session);
 
-    expect(view.roleSet.map((role) => role.roleName)).toEqual(['方案官', '风险官', '权衡官', '裁决官']);
+    expect(view.roleSet.map((role) => role.roleId)).toEqual(['solution', 'risk', 'tradeoff', 'verdict']);
     expect(view.messages).toHaveLength(4);
-    expect(view.messages[0]?.roleName).toBe('方案官');
-    expect(view.messages[3]?.roleName).toBe('裁决官');
+    expect(view.messages[0]?.roleId).toBe('solution');
+    expect(view.messages[3]?.roleId).toBe('verdict');
     expect(view.draftSummary).toContain('Proceed with a session-first shell');
+  });
+
+  it('keeps legacy orchestration contract with four decision steps', async () => {
+    const recording = createRecordingAdapter();
+    const session = createDecisionSession('choose a stack');
+
+    const completed = await runDecisionOrchestration(session, recording.adapter);
+
+    expect(completed.status).toBe('completed');
+    expect(completed.steps.map((step) => step.type)).toEqual([
+      'hypothesis_eval',
+      'risk_eval',
+      'option_compare',
+      'summary',
+    ]);
+    expect(completed.steps).toHaveLength(4);
   });
 });

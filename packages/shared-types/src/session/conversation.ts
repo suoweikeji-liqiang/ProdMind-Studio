@@ -6,6 +6,16 @@ export type ConversationMode = z.infer<typeof ConversationModeSchema>;
 export const ConversationSessionStatusSchema = z.enum(['active', 'archived', 'failed']);
 export type ConversationSessionStatus = z.infer<typeof ConversationSessionStatusSchema>;
 
+export const SessionInteractionStateSchema = z.enum([
+  'idle',
+  'running_ai_step',
+  'waiting_user_input',
+  'ready_to_finalize',
+  'completed',
+  'blocked',
+]);
+export type SessionInteractionState = z.infer<typeof SessionInteractionStateSchema>;
+
 export const SharedContextSchema = z.object({
   hardConstraints: z.array(z.string()).default([]),
   confirmedFacts: z.array(z.string()).default([]),
@@ -44,11 +54,96 @@ export const ModeStateSchema = z.object({
 });
 export type ModeState = z.infer<typeof ModeStateSchema>;
 
+// ── Phase enums ────────────────────────────────────────────────────────────────
+
+export const ChallengePhaseSchema = z.enum([
+  'topic_submitted',
+  'architect_framing',
+  'waiting_user_problem_correction',
+  'objection_generation',
+  'waiting_user_objection_response',
+  'grounding',
+  'waiting_round_decision',
+  'waiting_alternative_hypothesis_resolution',
+  'waiting_false_consensus_break',
+  'waiting_tech_escape_response',
+]);
+export type ChallengePhase = z.infer<typeof ChallengePhaseSchema>;
+
+export const DecisionPhaseSchema = z.enum([
+  'decision_prompt_submitted',
+  'decision_frame_generation',
+  'waiting_user_frame_confirmation',
+  'tradeoff_analysis',
+  'waiting_user_priority_adjustment',
+  'recommendation_synthesis',
+  'waiting_decision_resolution',
+]);
+export type DecisionPhase = z.infer<typeof DecisionPhaseSchema>;
+
+export const RequirementBuildPhaseSchema = z.enum([
+  'artifact_goal_submitted',
+  'artifact_scope_detection',
+  'waiting_user_artifact_selection',
+  'draft_generation',
+  'waiting_user_draft_revision',
+  'ready_for_downstream_or_finalize',
+  'artifact_finalized',
+]);
+export type RequirementBuildPhase = z.infer<typeof RequirementBuildPhaseSchema>;
+
+export const SessionPhaseSchema = z.union([
+  ChallengePhaseSchema,
+  DecisionPhaseSchema,
+  RequirementBuildPhaseSchema,
+]);
+export type SessionPhase = z.infer<typeof SessionPhaseSchema>;
+
+// ── User action types ──────────────────────────────────────────────────────────
+
+export const ChallengeUserActionSchema = z.enum([
+  'raw_topic',
+  'problem_correction',
+  'objection_response',
+  'round_resolution',
+]);
+export type ChallengeUserAction = z.infer<typeof ChallengeUserActionSchema>;
+
+export const DecisionUserActionSchema = z.enum([
+  'decision_problem',
+  'frame_correction',
+  'priority_adjustment',
+  'decision_resolution',
+]);
+export type DecisionUserAction = z.infer<typeof DecisionUserActionSchema>;
+
+export const RequirementUserActionSchema = z.enum([
+  'artifact_goal',
+  'artifact_selection',
+  'draft_revision',
+  'finalization_note',
+]);
+export type RequirementUserAction = z.infer<typeof RequirementUserActionSchema>;
+
+export const UserActionSchema = z.union([
+  ChallengeUserActionSchema,
+  DecisionUserActionSchema,
+  RequirementUserActionSchema,
+]);
+export type UserAction = z.infer<typeof UserActionSchema>;
+
+// ── Session ────────────────────────────────────────────────────────────────────
+
 export const ConversationSessionSchema = z.object({
   sessionId: z.string(),
   topic: z.string(),
   status: ConversationSessionStatusSchema,
   currentMode: ConversationModeSchema,
+  currentPhase: SessionPhaseSchema.default('topic_submitted'),
+  interactionState: SessionInteractionStateSchema.default('waiting_user_input'),
+  requiredUserAction: z.string().default('请输入你的议题或想法'),
+  lastCompletedStep: z.string().optional(),
+  nextRecommendedMode: ConversationModeSchema.optional(),
   sharedContext: SharedContextSchema.default({}),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -94,6 +189,12 @@ export const ConversationEventSchema = z.discriminatedUnion('type', [
     artifactId: z.string(),
     artifactType: z.string(),
     version: z.number().int().positive(),
+  }),
+  BaseConversationEventSchema.extend({
+    type: z.literal('phase_transition'),
+    fromPhase: SessionPhaseSchema,
+    toPhase: SessionPhaseSchema,
+    requiredUserAction: z.string(),
   }),
 ]);
 export type ConversationEvent = z.infer<typeof ConversationEventSchema>;

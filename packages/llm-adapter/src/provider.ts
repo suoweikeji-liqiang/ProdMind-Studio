@@ -366,15 +366,19 @@ function isExplicitFallbackMode(mode: ProviderFallbackMode): boolean {
   return mode === 'explicit';
 }
 
-function canUseFallback(backend: ProviderBackend | undefined): boolean {
+function canUseFallback(
+  backend: ProviderBackend | undefined,
+  fallbackModeOverride?: ProviderFallbackMode
+): boolean {
   if (!backend) {
     return false;
   }
 
   const bounds = resolveReliabilityBounds(backend.profile.reliability);
+  const fallbackMode = fallbackModeOverride ?? bounds.fallbackMode;
 
   return backend.profile.reliability.fallbackEligible
-    && isExplicitFallbackMode(bounds.fallbackMode);
+    && isExplicitFallbackMode(fallbackMode);
 }
 
 function buildRouteCandidate(
@@ -397,6 +401,7 @@ function buildPolicySnapshot(
   const requestedTimeoutMs = sanitizePositiveInt(options?.timeoutMs);
   const requestedMaxRetries = sanitizeNonNegativeInt(options?.maxRetries);
   const reliability = resolveReliabilityBounds(backend.profile.reliability);
+  const requestedFallbackMode = options?.fallbackMode;
 
   return {
     timeoutMs: clamp(
@@ -409,7 +414,7 @@ function buildPolicySnapshot(
       0,
       reliability.maxRetriesLimit
     ),
-    fallbackMode: reliability.fallbackMode,
+    fallbackMode: requestedFallbackMode ?? reliability.fallbackMode,
   };
 }
 
@@ -456,10 +461,12 @@ function withRouteRejection(
 function resolveInitialRoute(
   primary: ProviderBackend,
   fallback: ProviderBackend | undefined,
-  requiredCapabilities: ProviderSelectionRequirement | undefined
+  requiredCapabilities: ProviderSelectionRequirement | undefined,
+  options: LLMRequestOptions | undefined
 ): RouteSelection {
   const resolution = buildRouteResolutionBase(primary, fallback, requiredCapabilities);
   const primaryMismatch = resolveCapabilityMismatch(primary.profile, requiredCapabilities);
+  const primaryPolicy = buildPolicySnapshot(primary, options);
 
   if (!primaryMismatch) {
     return {
@@ -471,7 +478,7 @@ function resolveInitialRoute(
     };
   }
 
-  if (fallback && canUseFallback(primary)) {
+  if (fallback && canUseFallback(primary, primaryPolicy.fallbackMode)) {
     const fallbackMismatch = resolveCapabilityMismatch(fallback.profile, requiredCapabilities);
     if (!fallbackMismatch) {
       return {
@@ -495,9 +502,10 @@ function shouldAttemptFallback(
   primaryBackend: ProviderBackend,
   fallbackBackend: ProviderBackend | undefined,
   error: ProviderError,
-  requiredCapabilities: ProviderSelectionRequirement | undefined
+  requiredCapabilities: ProviderSelectionRequirement | undefined,
+  policy: ProviderPolicySnapshot
 ): boolean {
-  if (!fallbackBackend || !canUseFallback(primaryBackend)) {
+  if (!fallbackBackend || !canUseFallback(primaryBackend, policy.fallbackMode)) {
     return false;
   }
 
@@ -664,7 +672,7 @@ export function createAdapterFromBackends(
     primaryExecutor: () => Promise<{ value: T; usage?: RawUsage }>,
     fallbackExecutor: (() => Promise<{ value: T; usage?: RawUsage }>) | undefined
   ): Promise<T> {
-    const routeSelection = resolveInitialRoute(primary, fallback, options?.requiredCapabilities);
+    const routeSelection = resolveInitialRoute(primary, fallback, options?.requiredCapabilities, options);
     if (!routeSelection.ok) {
       const summary = buildExecutionSummary({
         operation,
@@ -740,7 +748,13 @@ export function createAdapterFromBackends(
     }
 
     const canFallbackAfterPrimary = selectedBackend === primary
-      && shouldAttemptFallback(primary, routeSelection.fallbackBackend, selectedResult.error, options?.requiredCapabilities)
+      && shouldAttemptFallback(
+        primary,
+        routeSelection.fallbackBackend,
+        selectedResult.error,
+        options?.requiredCapabilities,
+        selectedPolicy
+      )
       && fallbackExecutor;
 
     if (canFallbackAfterPrimary && routeSelection.fallbackBackend) {

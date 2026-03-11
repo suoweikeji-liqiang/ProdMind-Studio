@@ -266,6 +266,33 @@ const layout = (title: string, content: string) => `<!DOCTYPE html>
       color: #6b4f1d;
       font-size: 0.92rem;
     }
+    .debug-log-list {
+      display: grid;
+      gap: 10px;
+      max-height: 320px;
+      overflow: auto;
+    }
+    .debug-log-item {
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(87, 73, 43, 0.12);
+      background: rgba(255, 255, 255, 0.58);
+    }
+    .debug-log-item strong {
+      display: block;
+      margin-bottom: 6px;
+    }
+    .debug-log-detail {
+      margin-top: 8px;
+      padding: 10px;
+      border-radius: 10px;
+      background: rgba(15, 23, 42, 0.05);
+      font-family: Consolas, monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: #423b2e;
+    }
     @media (max-width: 720px) {
       nav { flex-direction: column; align-items: flex-start; }
       .hero { grid-template-columns: 1fr; }
@@ -379,12 +406,21 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
       <div class="card">
         <h2>当前模式</h2>
         <div id="sessionMeta" class="empty">正在加载会话状态...</div>
+        <div id="sessionPhaseBanner" class="callout" style="margin-top:10px;display:none;">
+          <strong id="sessionPhaseLabel"></strong>
+          <p id="sessionInteractionState" class="small" style="margin:4px 0 0;color:var(--accent);"></p>
+          <p id="sessionLastStep" class="small" style="margin:4px 0 0;"></p>
+          <p id="sessionHandoffHint" class="small" style="color:var(--accent);margin:4px 0 0;"></p>
+          <p id="sessionModeWarning" class="small" style="color:var(--danger);margin:4px 0 0;"></p>
+          <p id="sessionRollbackHint" class="small" style="margin:4px 0 0;"></p>
+        </div>
         <div class="mode-switcher">
           <button class="mode-pill" type="button" data-mode="challenge">质疑模式</button>
           <button class="mode-pill" type="button" data-mode="decision">裁决模式</button>
           <button class="mode-pill" type="button" data-mode="requirement-build">需求共建模式</button>
         </div>
         <p class="small">模式切换后会持续生效，直到你再次切换。</p>
+        <p class="small">质疑模式通常需要 20-60 秒，因为系统会汇总多个角色的判断；完成后页面会自动刷新。</p>
         <div id="sessionStatusBanner" class="empty">切换模式、发送消息和定稿后，结果会立即刷新到时间线和右栏。</div>
       </div>
       <div class="card">
@@ -404,7 +440,7 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
         <h2>继续推进</h2>
         <form id="sessionMessageForm" class="stack">
           <div>
-            <label for="sessionMessageInput">当前模式输入</label>
+            <label id="sessionComposerLabel" for="sessionMessageInput">当前模式输入</label>
             <textarea
               id="sessionMessageInput"
               name="content"
@@ -417,6 +453,13 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
           </div>
           <div id="sessionComposerError" class="small" style="color: var(--danger);"></div>
         </form>
+      </div>
+      <div class="card" id="debugLogPanel">
+        <h2>前端调试日志</h2>
+        <p class="small">这里会显示按钮点击、请求开始、响应状态、异常和浏览器脚本错误。</p>
+        <div id="debugLogList" class="debug-log-list">
+          <div class="empty">正在等待前端事件...</div>
+        </div>
       </div>
     </div>
     <div class="stack">
@@ -458,6 +501,7 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
     const sessionModePath = '/api/sessions/${escapeHtml(sessionId)}/mode';
     const sessionMessagePath = '/api/sessions/${escapeHtml(sessionId)}/messages';
     const sessionFinalizePath = '/api/sessions/${escapeHtml(sessionId)}/artifacts/finalize';
+    const debugLogs = [];
 
     function escapeHtml(value) {
       return String(value ?? '')
@@ -475,8 +519,69 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
       return String(mode || '未知模式');
     }
 
+    function interactionStateLabel(interactionState) {
+      if (interactionState === 'running_ai_step') return '系统正在处理这一轮输入';
+      if (interactionState === 'ready_to_finalize') return '当前结果已到可收束或定稿状态';
+      if (interactionState === 'blocked') return '当前流程被阻塞，必须先处理上面的分歧';
+      if (interactionState === 'completed') return '当前会话已完成';
+      if (interactionState === 'idle') return '当前会话尚未开始';
+      return '系统正在等待你的下一步输入';
+    }
+
     function setInlineMessage(elementId, message) {
       document.getElementById(elementId).textContent = message || '';
+    }
+
+    function formatDebugValue(value) {
+      if (value instanceof Error) {
+        return value.stack || value.message;
+      }
+      if (typeof value === 'string') {
+        return value;
+      }
+      try {
+        return JSON.stringify(value, null, 2);
+      } catch (_error) {
+        return String(value);
+      }
+    }
+
+    function summarizeDebugData(data) {
+      const text = formatDebugValue(data);
+      return text.length > 500 ? text.slice(0, 500) + '…' : text;
+    }
+
+    function renderDebugLogs() {
+      const panel = document.getElementById('debugLogList');
+      if (!panel) {
+        return;
+      }
+
+      if (debugLogs.length === 0) {
+        panel.innerHTML = '<div class="empty">正在等待前端事件...</div>';
+        return;
+      }
+
+      panel.innerHTML = debugLogs.map((entry) => (
+        '<div class="debug-log-item">' +
+          '<strong>' + escapeHtml(entry.kind) + ' · ' + escapeHtml(entry.message) + '</strong>' +
+          '<div class="microcopy">' + escapeHtml(entry.timestamp) + '</div>' +
+          (entry.detail ? '<div class="debug-log-detail">' + escapeHtml(entry.detail) + '</div>' : '') +
+        '</div>'
+      )).join('');
+    }
+
+    function appendDebugLog(kind, message, detail) {
+      debugLogs.unshift({
+        kind,
+        message,
+        detail: detail ? summarizeDebugData(detail) : '',
+        timestamp: new Date().toISOString(),
+      });
+      if (debugLogs.length > 20) {
+        debugLogs.length = 20;
+      }
+      renderDebugLogs();
     }
 
     function setStatusBanner(kind, title, message) {
@@ -605,12 +710,44 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
     function applySessionData(data, options) {
       const disabled = Boolean(options && options.disabled);
       renderModePills(data.session.currentMode, disabled);
-      updateComposerHint(data.session.currentMode);
       document.getElementById('sessionSendButton').disabled = disabled;
+
+      // ── Phase banner (currentPhase / requiredUserAction) ───────────────────
+      const phaseBanner = document.getElementById('sessionPhaseBanner');
+      const phaseLabel = document.getElementById('sessionPhaseLabel');
+      const interactionStateEl = document.getElementById('sessionInteractionState');
+      const lastStepEl = document.getElementById('sessionLastStep');
+      const handoffHintEl = document.getElementById('sessionHandoffHint');
+      const modeWarningEl = document.getElementById('sessionModeWarning');
+      const rollbackHintEl = document.getElementById('sessionRollbackHint');
+      const currentPhase = data.session && data.session.currentPhase;
+      const interactionState = data.session && data.session.interactionState;
+      const requiredUserAction = data.session && data.session.requiredUserAction;
+      const lastCompletedStep = data.session && data.session.lastCompletedStep;
+      const nextRecommendedMode = data.session && data.session.nextRecommendedMode;
+      const modeTransitionWarning = data.session && data.session.modeTransitionWarning;
+      const recommendedRollbackMode = data.session && data.session.recommendedRollbackMode;
+      if (phaseBanner && currentPhase) {
+        phaseBanner.style.display = '';
+        if (phaseLabel) phaseLabel.textContent = currentPhase;
+        if (interactionStateEl) interactionStateEl.textContent = interactionState ? interactionStateLabel(interactionState) : '';
+        if (lastStepEl) lastStepEl.textContent = lastCompletedStep || '';
+        if (handoffHintEl) handoffHintEl.textContent = nextRecommendedMode ? '建议下一步切换到：' + modeLabel(nextRecommendedMode) : '';
+        if (modeWarningEl) modeWarningEl.textContent = modeTransitionWarning || '';
+        if (rollbackHintEl) rollbackHintEl.textContent = recommendedRollbackMode ? '建议先回退到：' + modeLabel(recommendedRollbackMode) : '';
+      }
+
+      // ── Composer label (requiredUserAction) ────────────────────────────────
+      const composerLabel = document.getElementById('sessionComposerLabel');
+      if (composerLabel) composerLabel.textContent = requiredUserAction || '当前模式输入';
+      updateComposerHint(data.session.currentMode);
+
       document.getElementById('sessionMeta').innerHTML =
         '<div class="meta-grid">' +
           '<div class="timeline-item"><strong>议题</strong>' + escapeHtml(data.session.topic) + '</div>' +
           '<div class="timeline-item"><strong>当前模式</strong>' + escapeHtml(modeLabel(data.session.currentMode)) + '</div>' +
+          '<div class="timeline-item"><strong>当前阶段</strong>' + escapeHtml(currentPhase || '') + '</div>' +
+          '<div class="timeline-item"><strong>交互状态</strong>' + escapeHtml(interactionStateLabel(interactionState)) + '</div>' +
           '<div class="timeline-item"><strong>状态</strong>' + escapeHtml(data.session.status) + '</div>' +
           '<div class="timeline-item"><strong>最近活跃</strong>' + escapeHtml(data.session.lastActiveAt || data.session.updatedAt || '') + '</div>' +
         '</div>';
@@ -630,9 +767,11 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
     }
 
     async function loadSession(statusMessage) {
+      appendDebugLog('request', 'GET ' + sessionPath);
       try {
         const response = await fetch(sessionPath);
         const data = await readJson(response);
+        appendDebugLog('response', response.status + ' GET ' + sessionPath, data);
         if (!response.ok) {
           document.getElementById('sessionMeta').innerHTML =
             '<div class="callout danger"><strong>无法加载会话。</strong><p class="small">' + escapeHtml(data.error || 'Unknown error') + '</p></div>';
@@ -648,6 +787,7 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
           setStatusBanner('', '', '');
         }
       } catch (error) {
+        appendDebugLog('catch', 'loadSession failed', error);
         const message = error instanceof Error ? error.message : 'Unknown error';
         document.getElementById('sessionMeta').innerHTML =
           '<div class="callout danger"><strong>无法加载会话。</strong><p class="small">' + escapeHtml(message) + '</p></div>';
@@ -667,6 +807,7 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
       setStatusBanner('', '正在切换模式…', '请稍候，当前会话会刷新到新的思考模式。');
       renderModePills(mode, true);
       document.getElementById('sessionSendButton').disabled = true;
+      appendDebugLog('request', 'POST ' + sessionModePath, { mode });
 
       try {
         const response = await fetch(sessionModePath, {
@@ -675,6 +816,7 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
           body: JSON.stringify({ mode })
         });
         const data = await readJson(response);
+        appendDebugLog('response', response.status + ' POST ' + sessionModePath, data);
         if (!response.ok) {
           throw new Error(data.error || '无法切换模式');
         }
@@ -682,6 +824,7 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
         applySessionData(data, { disabled: false });
         setStatusBanner('success', '模式已切换', '当前会话已进入 ' + modeLabel(data.session.currentMode) + '。');
       } catch (error) {
+        appendDebugLog('catch', 'switchMode failed', error);
         const message = error instanceof Error ? error.message : '无法切换模式';
         document.getElementById('sessionSendButton').disabled = false;
         setStatusBanner('danger', '模式切换失败', message);
@@ -690,6 +833,7 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
 
     async function submitMessage(event) {
       event.preventDefault();
+      appendDebugLog('submit', 'sessionMessageForm submitted');
       const form = event.currentTarget;
       const input = document.getElementById('sessionMessageInput');
       const content = input.value.trim();
@@ -699,8 +843,9 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
       }
 
       setInlineMessage('sessionComposerError', '');
-      setStatusBanner('', '正在生成本轮输出…', '系统会把这条输入送到当前模式，并刷新时间线与右栏。');
+      setStatusBanner('', '正在生成本轮输出…', '系统会把这条输入送到当前模式。质疑模式通常需要 20-60 秒，完成后会自动刷新时间线与右栏。');
       document.getElementById('sessionSendButton').disabled = true;
+      appendDebugLog('request', 'POST ' + sessionMessagePath, { content });
 
       try {
         const response = await fetch(sessionMessagePath, {
@@ -709,6 +854,7 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
           body: JSON.stringify({ content })
         });
         const data = await readJson(response);
+        appendDebugLog('response', response.status + ' POST ' + sessionMessagePath, data);
         if (!response.ok) {
           throw new Error(data.error || '无法发送消息');
         }
@@ -719,6 +865,7 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
         input.focus();
         setStatusBanner('success', '本轮已完成', '新的角色发言和草稿摘要已经刷新。');
       } catch (error) {
+        appendDebugLog('catch', 'submitMessage failed', error);
         const message = error instanceof Error ? error.message : '无法发送消息';
         document.getElementById('sessionSendButton').disabled = false;
         setInlineMessage('sessionComposerError', message);
@@ -732,6 +879,7 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
       setInlineMessage('finalizeArtifactsError', '');
       setStatusBanner('', '正在生成新版本…', '定稿不会覆盖旧版本，完成后右栏会刷新。');
       document.getElementById('finalizeArtifactsButton').disabled = true;
+      appendDebugLog('request', 'POST ' + sessionFinalizePath, { note });
 
       try {
         const response = await fetch(sessionFinalizePath, {
@@ -740,6 +888,7 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
           body: JSON.stringify({ note })
         });
         const data = await readJson(response);
+        appendDebugLog('response', response.status + ' POST ' + sessionFinalizePath, data);
         if (!response.ok) {
           throw new Error(data.error || '无法定稿');
         }
@@ -748,6 +897,7 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
         document.getElementById('finalizeNote').value = '';
         setStatusBanner('success', '新版本已生成', '右栏中的已定稿版本已经更新。');
       } catch (error) {
+        appendDebugLog('catch', 'finalizeArtifacts failed', error);
         const message = error instanceof Error ? error.message : '无法定稿';
         syncFinalizeControls({ session: { currentMode: 'requirement-build' }, artifacts: { drafts: { placeholder: true }, finalized: {} } }, false);
         setInlineMessage('finalizeArtifactsError', message);
@@ -755,12 +905,24 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
       }
     }
 
+    window.addEventListener('error', (event) => {
+      const location = [event.filename, event.lineno, event.colno].filter(Boolean).join(':');
+      appendDebugLog('window.error', event.message || 'Unknown window error', location || event.error);
+    });
+
+    window.addEventListener('unhandledrejection', (event) => {
+      appendDebugLog('unhandledrejection', 'Unhandled promise rejection', event.reason);
+    });
+
     for (const button of document.querySelectorAll('[data-mode]')) {
       button.addEventListener('click', () => switchMode(button.dataset.mode));
     }
 
+    document.getElementById('sessionSendButton').addEventListener('click', () => appendDebugLog('click', 'sessionSendButton clicked'));
     document.getElementById('sessionMessageForm').addEventListener('submit', submitMessage);
     document.getElementById('finalizeArtifactsForm').addEventListener('submit', finalizeArtifacts);
+    appendDebugLog('init', 'session page script loaded', sessionPath);
+    renderDebugLogs();
     loadSession();
   </script>
 `);
@@ -892,7 +1054,7 @@ export const renderSessionReplayPage = (sessionId: string) => layout('Replay', `
           if (Array.isArray(event.sourceReferences) && event.sourceReferences.length > 0) {
             sections.push('参考资料：' + event.sourceReferences.map((item) => escapeHtml(item)).join('；'));
           }
-          return '<div class="timeline-item"><strong>共享底稿更新</strong><div>' + sections.join('<br>') + '</div></div>';
+          return '<div class="timeline-item"><strong>共享底座更新</strong><div>' + sections.join('<br>') + '</div></div>';
         }
         return '<div class="timeline-item"><strong>用户消息</strong><div>' + escapeHtml(event.content || '') + '</div></div>';
       }).join('');

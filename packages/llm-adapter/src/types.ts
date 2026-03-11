@@ -38,6 +38,7 @@ export interface LLMRequestOptions {
   requiredCapabilities?: ProviderSelectionRequirement;
   timeoutMs?: number;
   maxRetries?: number;
+  fallbackMode?: ProviderFallbackMode;
 }
 
 export interface LLMAdapter {

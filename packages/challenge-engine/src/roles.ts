@@ -16,6 +16,9 @@ export interface RoleCallOptions {
   roundHistory?: string;
 }
 
+const CHALLENGE_ROLE_TIMEOUT_MS = 15_000;
+const CHALLENGE_ROLE_MAX_RETRIES = 0;
+
 const ARCHITECT_PROMPT = `你是架构师角色。你的任务是从用户的模糊想法中提炼核心问题定义。
 输出格式：
 ## 核心问题
@@ -82,5 +85,8 @@ export async function callRole(
     requiredCapabilities: {
       streaming: true,
     },
+    timeoutMs: CHALLENGE_ROLE_TIMEOUT_MS,
+    maxRetries: CHALLENGE_ROLE_MAX_RETRIES,
+    fallbackMode: 'disabled',
   });
 }

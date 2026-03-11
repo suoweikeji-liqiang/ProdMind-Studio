@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { ProjectState, AssetWriter } from '@prodmind/shared-types';
 
-type RequirementArtifactType = 'idea' | 'spec' | 'acceptance' | 'tasks';
+export type RequirementArtifactType = 'idea' | 'spec' | 'acceptance' | 'tasks';
 
 export interface RequirementDraftArtifact {
   artifactType: RequirementArtifactType;
@@ -13,6 +13,13 @@ export interface RequirementDraftArtifact {
 }
 
 export type RequirementDraftPack = Record<RequirementArtifactType, RequirementDraftArtifact>;
+
+const REQUIREMENT_ARTIFACT_TITLES: Record<RequirementArtifactType, string> = {
+  idea: 'Idea Draft',
+  spec: 'Spec Draft',
+  acceptance: 'Acceptance Draft',
+  tasks: 'Tasks Draft',
+};
 
 function readOpenPoints(state: ProjectState): string[] {
   const points: string[] = [];
@@ -167,36 +174,40 @@ export function createAssetWriter(): AssetWriter {
   };
 }
 
-export async function writeRequirementDraftPack(projectDir: string, state: ProjectState): Promise<RequirementDraftPack> {
+export async function writeRequirementDraftArtifact(
+  projectDir: string,
+  state: ProjectState,
+  artifactType: RequirementArtifactType
+): Promise<RequirementDraftArtifact> {
   await fs.mkdir(projectDir, { recursive: true });
   const writer = createAssetWriter();
-  const [ideaPath, specPath, acceptancePath, tasksPath] = await Promise.all([
-    writer.writeIdea(projectDir, state),
-    writer.writeSpec(projectDir, state),
-    writer.writeAcceptance(projectDir, state),
-    writer.writeTasks(projectDir, state),
-  ]);
 
-  const definitions: Array<[RequirementArtifactType, string, string]> = [
-    ['idea', ideaPath, 'Idea Draft'],
-    ['spec', specPath, 'Spec Draft'],
-    ['acceptance', acceptancePath, 'Acceptance Draft'],
-    ['tasks', tasksPath, 'Tasks Draft'],
-  ];
+  let artifactPath: string;
+  if (artifactType === 'idea') {
+    artifactPath = await writer.writeIdea(projectDir, state);
+  } else if (artifactType === 'spec') {
+    artifactPath = await writer.writeSpec(projectDir, state);
+  } else if (artifactType === 'acceptance') {
+    artifactPath = await writer.writeAcceptance(projectDir, state);
+  } else {
+    artifactPath = await writer.writeTasks(projectDir, state);
+  }
 
-  const entries = await Promise.all(definitions.map(async ([artifactType, filePath, title]) => {
-    const content = await fs.readFile(filePath, 'utf8');
-    return [
-      artifactType,
-      {
-        artifactType,
-        title,
-        path: filePath,
-        content,
-        updatedAt: new Date().toISOString(),
-      },
-    ] as const;
-  }));
+  const content = await fs.readFile(artifactPath, 'utf8');
+  return {
+    artifactType,
+    title: REQUIREMENT_ARTIFACT_TITLES[artifactType],
+    path: artifactPath,
+    content,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+export async function writeRequirementDraftPack(projectDir: string, state: ProjectState): Promise<RequirementDraftPack> {
+  const artifactTypes: RequirementArtifactType[] = ['idea', 'spec', 'acceptance', 'tasks'];
+  const entries = await Promise.all(
+    artifactTypes.map(async (artifactType) => [artifactType, await writeRequirementDraftArtifact(projectDir, state, artifactType)] as const)
+  );
 
   return Object.fromEntries(entries) as RequirementDraftPack;
 }

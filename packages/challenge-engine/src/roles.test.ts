@@ -63,4 +63,14 @@ describe('Role Capability Requirements', () => {
 
     expect(recording.getLastOptions()?.requiredCapabilities?.streaming).toBe(true);
   });
+
+  it('uses bounded timeout and disables per-role retries', async () => {
+    const recording = createRecordingAdapter();
+
+    await callRole(recording.adapter, 'architect', 'test idea');
+
+    expect(recording.getLastOptions()?.timeoutMs).toBe(15000);
+    expect(recording.getLastOptions()?.maxRetries).toBe(0);
+    expect(recording.getLastOptions()?.fallbackMode).toBe('disabled');
+  });
 });

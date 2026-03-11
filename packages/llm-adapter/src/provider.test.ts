@@ -328,4 +328,51 @@ describe('LLM Adapter Reliability', () => {
     expect(summary?.failureStage).toBe('fallback');
     expect(summary?.failureType).toBe('fallback_failed');
   });
+
+  it('respects per-request fallback disable when the primary provider fails', async () => {
+    const fallback = createFakeProvider(
+      { default: 'fallback response' },
+      {
+        providerName: 'fake-fallback',
+        modelName: 'fallback-model',
+        reliability: {
+          defaultMaxRetries: 0,
+          maxRetriesLimit: 0,
+        },
+      }
+    );
+
+    const adapter = createFakeProvider(
+      { default: 'never reached' },
+      {
+        providerName: 'fake-primary',
+        modelName: 'primary-model',
+        reliability: {
+          defaultMaxRetries: 0,
+          maxRetriesLimit: 0,
+        },
+        behavior: {
+          streamText: {
+            failTimes: 1,
+            errorType: 'network',
+          },
+        },
+        fallback,
+      }
+    );
+
+    await expect(
+      adapter.streamText(
+        [{ role: 'user', content: 'disable fallback' }],
+        () => {},
+        undefined,
+        { fallbackMode: 'disabled' }
+      )
+    ).rejects.toThrow('[network]');
+
+    const summary = adapter.getExecutionLog()[0];
+    expect(summary?.fallbackUsed).toBe(false);
+    expect(summary?.failureStage).toBe('primary');
+    expect(summary?.failureType).toBe('network');
+  });
 });

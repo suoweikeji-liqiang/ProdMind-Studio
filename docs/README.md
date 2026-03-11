@@ -11,6 +11,21 @@ Documentation is grouped around the current conversation-first V1 direction: a t
 - [release-readiness.md](release-readiness.md)
 - [support-matrix.md](support-matrix.md)
 
+## Human-in-the-Loop Session Model
+
+The current Web session shell now ships explicit human-in-the-loop state instead of a generic freeform chat loop.
+
+- Session payloads expose `currentPhase`, `interactionState`, `requiredUserAction`, `lastCompletedStep`, and `nextRecommendedMode`
+- Cross-mode guidance also exposes `modeTransitionWarning` and `recommendedRollbackMode`
+- `challenge` includes two human checkpoints plus interrupt states for alternative hypothesis, false consensus, and tech escape
+- `decision` waits for frame confirmation before tradeoff analysis and recommendation
+- `requirement-build` advances one artifact layer at a time and only creates versions on explicit finalization
+- `idle` remains a reserved interaction state; `completed` currently maps to archived sessions
+
+- [plans/2026-03-11-human-in-the-loop-mode-blueprint-design.md](plans/2026-03-11-human-in-the-loop-mode-blueprint-design.md)
+- [plans/2026-03-11-mode-state-machine-design.md](plans/2026-03-11-mode-state-machine-design.md)
+- [plans/2026-03-11-human-in-the-loop-mode-state-machine-plan.md](plans/2026-03-11-human-in-the-loop-mode-state-machine-plan.md)
+
 ## Latest Provider / Validation Docs
 
 - [phase5c-provider-capability-boundary.md](phase5c-provider-capability-boundary.md)
