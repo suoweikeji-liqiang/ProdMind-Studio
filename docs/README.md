@@ -40,12 +40,7 @@ Documentation is grouped around the current conversation-first V1 direction: a t
 ## Historical Migration Records
 
 - [migration-plan.md](migration-plan.md) -- full phase progression log (migration complete)
-- [phase4c-completion-report.md](phase4c-completion-report.md)
-- [phase4c1-completion-report.md](phase4c1-completion-report.md)
-- [phase5a-completion-report.md](phase5a-completion-report.md)
-- [phase5b-completion-report.md](phase5b-completion-report.md)
-- [phase5c-deferred.md](phase5c-deferred.md)
-- [phase5d-deferred.md](phase5d-deferred.md)
+- [archive/](archive/) — completion reports and boundary docs from all phases
 
 ## Execution Planning
 
@@ -53,4 +48,3 @@ Documentation is grouped around the current conversation-first V1 direction: a t
 - [plans/2026-03-09-v1-sprint-single-user-workbench-plan.md](plans/2026-03-09-v1-sprint-single-user-workbench-plan.md)
 - [plans/2026-03-11-session-shell-chinese-consistency-design.md](plans/2026-03-11-session-shell-chinese-consistency-design.md)
 - [plans/2026-03-11-session-shell-chinese-consistency.md](plans/2026-03-11-session-shell-chinese-consistency.md)
-- [ci-plan.md](ci-plan.md)
