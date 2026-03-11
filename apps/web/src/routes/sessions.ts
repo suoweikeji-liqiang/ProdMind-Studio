@@ -501,7 +501,7 @@ sessionsRouter.post('/:id/messages', async (req: Request, res: Response) => {
 
     result = {
       ...result,
-      state: updatedSharedContext,
+      state: updatedSharedContext.state,
     };
   }
 

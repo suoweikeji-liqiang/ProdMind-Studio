@@ -84,6 +84,12 @@ export const ConversationEventSchema = z.discriminatedUnion('type', [
     summary: z.string(),
   }),
   BaseConversationEventSchema.extend({
+    type: z.literal('shared_context_updated'),
+    confirmedFacts: z.array(z.string()).default([]),
+    hardConstraints: z.array(z.string()).default([]),
+    sourceReferences: z.array(z.string()).default([]),
+  }),
+  BaseConversationEventSchema.extend({
     type: z.literal('artifact_finalized'),
     artifactId: z.string(),
     artifactType: z.string(),

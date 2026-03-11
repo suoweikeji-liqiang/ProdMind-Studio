@@ -6,14 +6,10 @@ import { loadEnvFiles } from './config.js';
 import { sessionsRouter } from './routes/sessions.js';
 import { workflowRouter } from './routes/workflow.js';
 import {
-  renderHistoryDetailPage,
-  renderHistoryListPage,
   renderHome,
-  renderResults,
   renderSessionHistoryPage,
   renderSessionPage,
   renderSessionReplayPage,
-  renderWorkflow,
 } from './views/index.js';
 
 export function createApp(): Express {
@@ -29,10 +25,10 @@ export function createApp(): Express {
   app.get('/sessions', (req, res) => res.send(renderSessionHistoryPage()));
   app.get('/sessions/:id/replay', (req, res) => res.send(renderSessionReplayPage(req.params.id)));
   app.get('/sessions/:id', (req, res) => res.send(renderSessionPage(req.params.id)));
-  app.get('/workflow', (req, res) => res.send(renderWorkflow()));
-  app.get('/results/:id', (req, res) => res.send(renderResults(req.params.id)));
-  app.get('/history', (req, res) => res.send(renderHistoryListPage()));
-  app.get('/history/:runId', (req, res) => res.send(renderHistoryDetailPage(req.params.runId)));
+  app.get('/workflow', (req, res) => res.redirect(302, '/'));
+  app.get('/results/:id', (req, res) => res.redirect(302, `/sessions/${encodeURIComponent(req.params.id)}/replay`));
+  app.get('/history', (req, res) => res.redirect(302, '/sessions'));
+  app.get('/history/:runId', (req, res) => res.redirect(302, `/sessions/${encodeURIComponent(req.params.runId)}/replay`));
 
   // API
   app.use('/api/workflow', workflowRouter);

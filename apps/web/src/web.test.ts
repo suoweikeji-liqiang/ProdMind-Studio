@@ -48,19 +48,11 @@ describe('Web Happy Path', () => {
   it('should have view renderers exported', async () => {
     const {
       renderHome,
-      renderWorkflow,
-      renderResults,
-      renderHistoryListPage,
-      renderHistoryDetailPage,
       renderSessionPage,
       renderSessionHistoryPage,
       renderSessionReplayPage,
     } = await import('../src/views/index.js');
     expect(renderHome).toBeDefined();
-    expect(renderWorkflow).toBeDefined();
-    expect(renderResults).toBeDefined();
-    expect(renderHistoryListPage).toBeDefined();
-    expect(renderHistoryDetailPage).toBeDefined();
     expect(renderSessionPage).toBeDefined();
     expect(renderSessionHistoryPage).toBeDefined();
     expect(renderSessionReplayPage).toBeDefined();
@@ -77,41 +69,7 @@ describe('Web Happy Path', () => {
     expect(html).toContain('开启会话');
     expect(html).toContain('/sessions');
     expect(html).not.toContain('Start New Workflow');
-  });
-
-  it('should render workflow page with status and recovery guidance', async () => {
-    const { renderWorkflow } = await import('../src/views/index.js');
-    const html = renderWorkflow();
-    expect(html).toContain('Execute Workflow');
-    expect(html).toContain('Run Workflow');
-    expect(html).toContain('What to expect');
-    expect(html).toContain('If the workflow fails');
-    expect(html).toContain('History is the safest way to revisit previous outputs');
-  });
-
-  it('should render results page with persisted-history fallback', async () => {
-    const { renderResults } = await import('../src/views/index.js');
-    const html = renderResults('test-123');
-    expect(html).toContain('Workflow Results');
-    expect(html).toContain('test-123');
-    expect(html).toContain('Provider Reliability');
-    expect(html).toContain('Recommendation');
-    expect(html).toContain('/api/workflow/history/test-123');
-    expect(html).toContain('persisted workflow history');
-  });
-
-  it('should render history list and detail pages', async () => {
-    const { renderHistoryListPage, renderHistoryDetailPage } = await import('../src/views/index.js');
-
-    const listHtml = renderHistoryListPage();
-    expect(listHtml).toContain('Workflow History');
-    expect(listHtml).toContain('Review earlier runs');
-    expect(listHtml).toContain('/api/workflow/history');
-
-    const detailHtml = renderHistoryDetailPage('run-42');
-    expect(detailHtml).toContain('History Detail');
-    expect(detailHtml).toContain('run-42');
-    expect(detailHtml).toContain('/api/workflow/history/run-42');
+    expect(html).not.toContain('compat-note');
   });
 
   it('should render session shell pages', async () => {
@@ -143,6 +101,7 @@ describe('Web Happy Path', () => {
     expect(replayHtml).toContain('会话回放');
     expect(replayHtml).toContain('session-42');
     expect(replayHtml).toContain('/api/sessions/session-42/replay');
+    expect(replayHtml).toContain('共享底稿更新');
   });
 
   it('should render provider summary block', async () => {
@@ -287,6 +246,22 @@ describe('Web Session Shell', () => {
       expect(replayResponse.status).toBe(200);
       expect(replayHtml).toContain('会话回放');
       expect(replayHtml).toContain('/api/sessions/session-123/replay');
+
+      const workflowRedirect = await fetch(`${baseUrl}/workflow`, { redirect: 'manual' });
+      expect(workflowRedirect.status).toBe(302);
+      expect(workflowRedirect.headers.get('location')).toBe('/');
+
+      const historyRedirect = await fetch(`${baseUrl}/history`, { redirect: 'manual' });
+      expect(historyRedirect.status).toBe(302);
+      expect(historyRedirect.headers.get('location')).toBe('/sessions');
+
+      const historyDetailRedirect = await fetch(`${baseUrl}/history/run-42`, { redirect: 'manual' });
+      expect(historyDetailRedirect.status).toBe(302);
+      expect(historyDetailRedirect.headers.get('location')).toBe('/sessions/run-42/replay');
+
+      const resultsRedirect = await fetch(`${baseUrl}/results/run-42`, { redirect: 'manual' });
+      expect(resultsRedirect.status).toBe(302);
+      expect(resultsRedirect.headers.get('location')).toBe('/sessions/run-42/replay');
     });
   });
 });
@@ -546,6 +521,15 @@ describe('Web Session API', () => {
         expect(challengeTurn.session.sharedContext.confirmedFacts).toContain('Web is the main delivery surface');
         expect(challengeTurn.session.sharedContext.hardConstraints).toContain('No collaboration in V1');
         expect(challengeTurn.session.sharedContext.sourceReferences).toContain('docs/v1-boundary.md');
+
+        const replayAfterChallengeResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/replay?projectPath=${encodeURIComponent(testSessionsDir)}`);
+        expect(replayAfterChallengeResponse.status).toBe(200);
+        const replayAfterChallenge = await readJson<any>(replayAfterChallengeResponse);
+        const sharedContextEvent = replayAfterChallenge.events.find((event: { type: string; }) => event.type === 'shared_context_updated');
+        expect(sharedContextEvent).toBeTruthy();
+        expect(sharedContextEvent.confirmedFacts).toEqual(['Web is the main delivery surface']);
+        expect(sharedContextEvent.hardConstraints).toEqual(['No collaboration in V1']);
+        expect(sharedContextEvent.sourceReferences).toEqual(['docs/v1-boundary.md']);
 
         const decisionModeResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/mode`, {
           method: 'POST',

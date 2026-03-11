@@ -271,41 +271,63 @@ export async function updateLiveSessionSharedContext(
   projectPath: string,
   sessionId: string,
   patch: Partial<SharedContext>
-): Promise<LiveSessionState | null> {
+): Promise<{ state: LiveSessionState; event: ConversationEvent | null } | null> {
   const existing = await getLiveSession(projectPath, sessionId);
   if (!existing) {
     return null;
   }
 
-  const mergeList = (current: string[], incoming?: string[]): string[] => {
+  const collectAdded = (current: string[], incoming?: string[]): string[] => {
     if (!incoming || incoming.length === 0) {
-      return current;
+      return [];
     }
 
-    return Array.from(new Set([
-      ...current,
-      ...incoming
+    const normalizedIncoming = Array.from(new Set(
+      incoming
         .map((item) => item.trim())
         .filter(Boolean),
-    ]));
+    ));
+
+    return normalizedIncoming.filter((item) => !current.includes(item));
   };
+
+  const addedFacts = collectAdded(existing.session.sharedContext.confirmedFacts, patch.confirmedFacts);
+  const addedConstraints = collectAdded(existing.session.sharedContext.hardConstraints, patch.hardConstraints);
+  const addedSources = collectAdded(existing.session.sharedContext.sourceReferences, patch.sourceReferences);
+  const hasChanges = addedFacts.length > 0 || addedConstraints.length > 0 || addedSources.length > 0;
+
+  if (!hasChanges) {
+    return { state: existing, event: null };
+  }
 
   const timestamp = nowIso();
   const updatedSession: ConversationSession = {
     ...existing.session,
     sharedContext: {
-      hardConstraints: mergeList(existing.session.sharedContext.hardConstraints, patch.hardConstraints),
-      confirmedFacts: mergeList(existing.session.sharedContext.confirmedFacts, patch.confirmedFacts),
-      sourceReferences: mergeList(existing.session.sharedContext.sourceReferences, patch.sourceReferences),
+      hardConstraints: [...existing.session.sharedContext.hardConstraints, ...addedConstraints],
+      confirmedFacts: [...existing.session.sharedContext.confirmedFacts, ...addedFacts],
+      sourceReferences: [...existing.session.sharedContext.sourceReferences, ...addedSources],
     },
     updatedAt: timestamp,
     lastActiveAt: timestamp,
   };
 
+  const event: ConversationEvent = {
+    type: 'shared_context_updated',
+    eventId: `${sessionId}-shared-context-${Date.now()}`,
+    sessionId,
+    mode: existing.session.currentMode,
+    timestamp,
+    confirmedFacts: addedFacts,
+    hardConstraints: addedConstraints,
+    sourceReferences: addedSources,
+  };
+
   existing.session = updatedSession;
 
   await persistence.saveSession(projectPath, updatedSession);
+  await persistence.appendEvent(projectPath, event);
 
   liveSessions.set(sessionId, existing);
-  return existing;
+  return { state: existing, event };
 }
