@@ -17,6 +17,9 @@ export function createApp(): Express {
 
   const app = express();
 
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
+  app.use('/static', express.static(path.join(__dirname, 'static')));
+
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 

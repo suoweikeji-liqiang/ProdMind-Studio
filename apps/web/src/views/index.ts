@@ -273,6 +273,7 @@ const layout = (title: string, content: string) => `<!DOCTYPE html>
       main { padding: 24px 16px 40px; }
     }
   </style>
+  <script src="/static/md.js"></script>
 </head>
 <body>
   <nav>
@@ -509,7 +510,7 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
       return messages.map((message) => (
         '<div class="timeline-item">' +
           '<strong>' + escapeHtml(message.roleName || (message.speaker === 'user' ? '用户' : '系统')) + '</strong>' +
-          '<div>' + escapeHtml(message.content).replaceAll('\\n', '<br>') + '</div>' +
+          '<div class="md-content">' + (typeof renderMarkdown === 'function' ? renderMarkdown(message.content) : escapeHtml(message.content)) + '</div>' +
           (message.timestamp ? '<div class="microcopy" style="margin-top: 8px;">' + escapeHtml(message.timestamp) + '</div>' : '') +
         '</div>'
       )).join('');
@@ -528,7 +529,7 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
         return '' +
           '<div class="timeline-item">' +
             '<strong>' + escapeHtml(artifactType) + '</strong>' +
-            '<div>' + escapeHtml(content).replaceAll('\\n', '<br>') + '</div>' +
+            '<div class="md-content">' + (typeof renderMarkdown === 'function' ? renderMarkdown(content) : escapeHtml(content)) + '</div>' +
           '</div>';
       }).join('');
     }
@@ -616,7 +617,7 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
       document.getElementById('timeline').innerHTML = renderTimeline(data.modeState && data.modeState.messages);
       document.getElementById('sharedContextPanel').innerHTML = renderSharedContext(data.session && data.session.sharedContext);
       document.getElementById('draftPanel').innerHTML = data.modeState && data.modeState.draftSummary
-        ? '<div class="timeline-item"><strong>当前模式草稿</strong><div>' + escapeHtml(data.modeState.draftSummary.summary).replaceAll('\\n', '<br>') + '</div></div>'
+        ? '<div class="timeline-item"><strong>当前模式草稿</strong><div>' + (typeof renderMarkdown === 'function' ? renderMarkdown(data.modeState.draftSummary.summary) : escapeHtml(data.modeState.draftSummary.summary)) + '</div></div>'
         : '<div class="empty">当前模式还没有草稿摘要。</div>';
       document.getElementById('draftArtifactsPanel').innerHTML = renderDraftArtifacts(data.artifacts && data.artifacts.drafts);
       document.getElementById('finalizedArtifactsPanel').innerHTML = renderFinalizedArtifacts(data.artifacts && data.artifacts.finalized);
