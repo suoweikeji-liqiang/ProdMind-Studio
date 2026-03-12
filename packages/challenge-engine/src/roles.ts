@@ -16,7 +16,7 @@ export interface RoleCallOptions {
   roundHistory?: string;
 }
 
-const CHALLENGE_ROLE_TIMEOUT_MS = 15_000;
+const CHALLENGE_ROLE_MIN_TIMEOUT_MS = 60_000;
 const CHALLENGE_ROLE_MAX_RETRIES = 0;
 
 const ARCHITECT_PROMPT = `你是架构师角色。你的任务是从用户的模糊想法中提炼核心问题定义。
@@ -76,16 +76,20 @@ export async function callRole(
   userMessage: string
 ): Promise<string> {
   const config = getRoleConfig(role);
+  const metadata = adapter.getMetadata();
   const messages: LLMMessage[] = [
     { role: 'system', content: config.systemPrompt },
     { role: 'user', content: userMessage },
   ];
 
+  const providerTimeoutMs = metadata.reliability.defaultTimeoutMs ?? metadata.reliability.timeoutMs;
+  const timeoutMs = Math.max(providerTimeoutMs ?? CHALLENGE_ROLE_MIN_TIMEOUT_MS, CHALLENGE_ROLE_MIN_TIMEOUT_MS);
+
   return adapter.streamText(messages, () => {}, undefined, {
     requiredCapabilities: {
       streaming: true,
     },
-    timeoutMs: CHALLENGE_ROLE_TIMEOUT_MS,
+    timeoutMs,
     maxRetries: CHALLENGE_ROLE_MAX_RETRIES,
     fallbackMode: 'disabled',
   });

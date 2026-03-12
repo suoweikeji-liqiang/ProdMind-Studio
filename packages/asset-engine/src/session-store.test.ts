@@ -32,6 +32,9 @@ describe('SessionStore', () => {
       topic: 'Test the new session store',
       status: 'active',
       currentMode: 'challenge',
+      currentPhase: 'topic_submitted',
+      requiredUserAction: 'raw_topic',
+      interactionState: 'waiting_user_input',
       sharedContext: {
         hardConstraints: ['No collaboration'],
         confirmedFacts: ['Web is primary'],
@@ -54,6 +57,9 @@ describe('SessionStore', () => {
       topic: 'Earlier topic',
       status: 'active',
       currentMode: 'challenge',
+      currentPhase: 'topic_submitted',
+      requiredUserAction: 'raw_topic',
+      interactionState: 'waiting_user_input',
       sharedContext: {
         hardConstraints: [],
         confirmedFacts: [],

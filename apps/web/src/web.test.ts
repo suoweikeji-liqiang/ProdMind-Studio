@@ -77,6 +77,8 @@ describe('Web Happy Path', () => {
 
     const sessionHtml = renderSessionPage('session-42');
     expect(sessionHtml).toContain('会话');
+    expect(sessionHtml).toContain('href="#mainContent"');
+    expect(sessionHtml).toContain('id="mainContent"');
     expect(sessionHtml).toContain('当前模式');
     expect(sessionHtml).toContain('当前模式草稿');
     expect(sessionHtml).toContain('草稿产物');
@@ -106,17 +108,23 @@ describe('Web Happy Path', () => {
     expect(sessionHtml).toContain('裁决模式');
     expect(sessionHtml).toContain('需求共建模式');
     expect(sessionHtml).toContain('只在需求共建模式下启用');
+    expect(sessionHtml).toContain('aria-live="polite"');
 
     const historyHtml = renderSessionHistoryPage();
     expect(historyHtml).toContain('会话历史');
     expect(historyHtml).toContain('按议题回看');
+    expect(historyHtml).toContain('id="sessionHistoryGuide"');
     expect(historyHtml).toContain('/api/sessions');
 
     const replayHtml = renderSessionReplayPage('session-42');
     expect(replayHtml).toContain('会话回放');
     expect(replayHtml).toContain('session-42');
     expect(replayHtml).toContain('/api/sessions/session-42/replay');
+    expect(replayHtml).toContain('id="replayResumePanel"');
+    expect(replayHtml).toContain('/sessions/session-42');
     expect(replayHtml).toContain('共享底座更新');
+    expect(replayHtml).toContain("event.type === 'phase_transition'");
+    expect(replayHtml).toContain('阶段推进');
     expect(replayHtml).toContain('建议');
     expect(replayHtml).not.toContain('Legacy Workflow');
     expect(replayHtml).not.toContain('Recommendation');
@@ -362,8 +370,11 @@ describe('Web Session API', () => {
       expect(goalAccepted.event.type).toBe('user_message');
       expect(goalAccepted.event.mode).toBe('requirement-build');
       expect(goalAccepted.session.currentPhase).toBe('waiting_user_artifact_selection');
+      expect(goalAccepted.session.requiredUserAction).toBe('请选择要推进的产物层级：想法、规格、验收或任务。');
       expect(goalAccepted.modeState.draftArtifacts).toEqual([]);
       expect(Object.keys(goalAccepted.artifacts.drafts)).toEqual([]);
+      expect(goalAccepted.modeState.messages.at(-1)?.content).not.toContain('requirement 目标');
+      expect(goalAccepted.modeState.messages.at(-1)?.content).not.toContain('action=artifact_selection');
 
       const selectionResponse = await fetch(`${baseUrl}/api/sessions/${created.session.sessionId}/messages`, {
         method: 'POST',
@@ -378,9 +389,65 @@ describe('Web Session API', () => {
       expect(selectionResponse.status).toBe(200);
       const selected = await readJson<any>(selectionResponse);
       expect(selected.session.currentPhase).toBe('waiting_user_draft_revision');
+      expect(selected.session.lastCompletedStep).toBe('已生成规格草稿');
       expect(selected.modeState.draftArtifacts).toEqual(['spec']);
       expect(Object.keys(selected.artifacts.drafts)).toEqual(['spec']);
-      expect(selected.artifacts.drafts.spec.content).toContain('# Spec');
+      expect(selected.artifacts.drafts.spec.content).toContain('# 规格草稿');
+      expect(selected.artifacts.drafts.spec.content).not.toContain('## Project');
+      expect(selected.artifacts.drafts.spec.content).not.toContain('## Projection');
+      expect(selected.artifacts.drafts.spec.content).not.toContain('## Compression');
+      expect(selected.artifacts.drafts.spec.content).not.toContain('"hardConstraints"');
+      expect(selected.artifacts.drafts.spec.content).not.toContain('"confirmedFacts"');
+      expect(selected.artifacts.drafts.spec.content).not.toContain('"sourceReferences"');
+      expect(selected.modeState.draftSummary.summary).not.toContain('requirement-build');
+    });
+  });
+
+  it('lists resumability metadata in session history api responses', async () => {
+    await withAppServer(async (baseUrl) => {
+      const createResponse = await fetch(`${baseUrl}/api/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic: 'Resume this requirement flow', projectPath: testSessionsDir }),
+      });
+      const created = await readJson<any>(createResponse);
+
+      await fetch(`${baseUrl}/api/sessions/${created.session.sessionId}/mode`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'requirement-build', projectPath: testSessionsDir }),
+      });
+
+      await fetch(`${baseUrl}/api/sessions/${created.session.sessionId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: 'Generate requirement assets for this direction.',
+          action: 'artifact_goal',
+          projectPath: testSessionsDir,
+        }),
+      });
+
+      await fetch(`${baseUrl}/api/sessions/${created.session.sessionId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: 'spec',
+          action: 'artifact_selection',
+          projectPath: testSessionsDir,
+        }),
+      });
+
+      const historyResponse = await fetch(`${baseUrl}/api/sessions?projectPath=${encodeURIComponent(testSessionsDir)}`);
+      expect(historyResponse.status).toBe(200);
+      const historyPayload = await readJson<any>(historyResponse);
+      const first = historyPayload.sessions[0];
+
+      expect(first.currentPhase).toBeTruthy();
+      expect(first.requiredUserAction).toBeTruthy();
+      expect(first.interactionState).toBeTruthy();
+      expect(first.hasDraftArtifacts).toBe(true);
+      expect(first.hasFinalizedArtifacts).toBe(false);
     });
   });
 
@@ -430,7 +497,11 @@ describe('Web Session API', () => {
         const step3 = await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: '杩欎簺璐ㄧ枒鏈夐亾鐞嗐€?', action: 'objection_response', projectPath: testSessionsDir }),
+          body: JSON.stringify({
+            content: '这些质疑里有一部分成立，但我认为真正的问题仍然是资料分散和消息脱节，因为这会让跨角色判断持续丢失，而且现有做法无法稳定追踪。',
+            action: 'objection_response',
+            projectPath: testSessionsDir,
+          }),
         });
         const r1s3 = await readJson<any>(step3);
         expect(r1s3.session.currentPhase).toBe('waiting_round_decision');
@@ -490,7 +561,11 @@ describe('Web Session API', () => {
         await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: '鍥炲簲璐ㄧ枒銆?', action: 'objection_response', projectPath: testSessionsDir }),
+          body: JSON.stringify({
+            content: '我会直接回应这些质疑：团队真正缺的不是一个漂亮界面，而是围绕议题沉淀判断、记录分歧并持续推进的共同工作面，这一点现在仍然缺失。',
+            action: 'objection_response',
+            projectPath: testSessionsDir,
+          }),
         });
 
         const switchResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/mode`, {
@@ -683,7 +758,7 @@ describe('Web Session API', () => {
       const draftResult = await readJson<any>(draftResponse);
       expect(draftResult.modeState.mode).toBe('requirement-build');
       expect(draftResult.modeState.draftArtifacts).toEqual(['spec']);
-      expect(draftResult.artifacts.drafts.spec.content).toContain('# Spec');
+      expect(draftResult.artifacts.drafts.spec.content).toContain('# 规格草稿');
       expect(draftResult.artifacts.drafts.idea).toBeUndefined();
       expect(draftResult.artifacts.finalized.spec).toEqual([]);
 
@@ -719,7 +794,7 @@ describe('Web Session API', () => {
       expect(finalizedAgain.artifacts.finalized.spec.map((item: { version: number; }) => item.version)).toEqual([1, 2]);
       expect(finalizedAgain.artifacts.finalized.spec[0].note).toBe('baseline');
       expect(finalizedAgain.artifacts.finalized.spec[1].note).toBe('expanded');
-      expect(finalizedAgain.artifacts.drafts.spec.content).toContain('# Spec');
+      expect(finalizedAgain.artifacts.drafts.spec.content).toContain('# 规格草稿');
     });
   });
   it('falls back to legacy workflow history when replaying pre-migration records', async () => {
@@ -882,6 +957,23 @@ describe('Web Session API', () => {
 });
 
 describe('Web Session Phase Metadata (Task 1)', () => {
+  it('formats phase/status/action/step labels for Chinese session UI instead of leaking raw English metadata', async () => {
+    const {
+      formatSessionPhaseLabel,
+      formatSessionStatusLabel,
+      formatSessionActionLabel,
+      formatSessionLastStepLabel,
+      formatTimelineSpeakerLabel,
+    } = await import('../src/views/index.js');
+
+    expect(formatSessionPhaseLabel('waiting_user_problem_correction')).toBe('等待你修正问题定义');
+    expect(formatSessionStatusLabel('active')).toBe('进行中');
+    expect(formatSessionActionLabel('Confirm or correct the problem framing.')).toBe('请确认或修正问题定义。');
+    expect(formatSessionLastStepLabel('architect framing completed')).toBe('架构师已完成问题定义');
+    expect(formatSessionLastStepLabel('mode switched to challenge')).toBe('已切换到质疑模式');
+    expect(formatTimelineSpeakerLabel({ speaker: 'role', roleId: 'assassin', roleName: 'assassin' })).toBe('刺客');
+  });
+
   it('exposes currentPhase and requiredUserAction in session creation response', async () => {
     await withAppServer(async (baseUrl) => {
       const createResponse = await fetch(`${baseUrl}/api/sessions`, {
@@ -924,11 +1016,163 @@ describe('Web Session Phase Metadata (Task 1)', () => {
     expect(html).toContain('currentPhase');
     expect(html).toContain('requiredUserAction');
     expect(html).toContain('interactionState');
+    expect(html).toContain('formatSessionPhaseLabel');
+    expect(html).toContain('formatSessionStatusLabel');
+    expect(html).toContain('formatSessionActionLabel');
+    expect(html).toContain('formatSessionLastStepLabel');
+    expect(html).toContain('function artifactLabel(');
+    expect(html).toContain('要求整理成想法、规格、验收或任务草稿');
+    expect(html).toContain('content: artifactLabel(actionValue)');
+  });
+
+  it('renders a three-column challenge workbench with rails, focus card and anchored composer', async () => {
+    const { renderSessionPage } = await import('../src/views/index.js');
+    const html = renderSessionPage('session-ui-overhaul');
+
+    expect(html).toContain('class="section-header session-toolbar"');
+    expect(html).toContain('id="challengeHistoryRail"');
+    expect(html).toContain('id="challengeCenterWorkbench"');
+    expect(html).toContain('id="challengeTopicBriefRail"');
+    expect(html).toContain('id="challengeFocusCard"');
+    expect(html).toContain('id="challengeRoundSummaryToggle"');
+    expect(html).toContain('id="challengeHistoryPreview"');
+    expect(html).toContain('id="challengeTopicAnchorPanel"');
+    expect(html).toContain('id="challengeConflictPanel"');
+    expect(html).toContain('id="challengeWorkbenchComposer"');
+    expect(html).toContain('id="challengeComposerFooter"');
+    expect(html).not.toContain('<h1>会话</h1>');
+    expect(html).not.toContain('<h2>工作流摘要</h2>');
+    expect(html).not.toContain('<h2>前端调试日志</h2>');
+  });
+
+  it('wires focus action templates and context toggles into the challenge workbench script', async () => {
+    const { renderSessionPage } = await import('../src/views/index.js');
+    const html = renderSessionPage('challenge-interrupt-test');
+
+    expect(html).toContain('function renderChallengeFocusActions(');
+    expect(html).toContain('data-focus-action-template="');
+    expect(html).toContain('data-focus-input-label="');
+    expect(html).toContain('data-focus-placeholder="');
+    expect(html).toContain("document.getElementById('challengeFocusActions').addEventListener('click'");
+    expect(html).toContain("document.getElementById('challengeRoundSummaryToggle').addEventListener('click'");
+    expect(html).toContain("document.getElementById('challengeHistoryNav').addEventListener('click'");
+  });
+
+  it('keeps challenge inline script escapes intact for browser execution', async () => {
+    const { renderSessionPage } = await import('../src/views/index.js');
+    const html = renderSessionPage('challenge-script-escape-test');
+
+    expect(html).toContain(".replaceAll(/\\r/g, '')");
+    expect(html).toContain(".split('\\n')");
+    expect(html).toContain(".replaceAll(/^#+\\s*/g, '')");
+    expect(html).toContain(".replaceAll(/^-\\s*/g, '')");
+    expect(html).toContain(".replaceAll('\\n', '<br>')");
+  });
+
+  it('pins challenge rails to the first grid row so side context does not fall below the center workbench', async () => {
+    const { renderSessionPage } = await import('../src/views/index.js');
+    const html = renderSessionPage('challenge-grid-placement-test');
+
+    expect(html).toContain('body.challenge-mode #challengeWorkbenchShell {');
+    expect(html).toContain('grid-row: 1 / span 3;');
+    expect(html).toContain('body.challenge-mode #challengeWorkbenchComposer {');
+    expect(html).toContain('grid-row: 1;');
+    expect(html).toContain('body.challenge-mode #challengeTopicBriefRail {');
+    expect(html).toContain('grid-column: 3;');
+  });
+
+  it('uses a compact challenge header and keeps the center input footer in normal page flow', async () => {
+    const { renderSessionPage } = await import('../src/views/index.js');
+    const html = renderSessionPage('challenge-scroll-behavior-test');
+
+    expect(html).toContain('.session-toolbar {');
+    expect(html).toContain('body.challenge-mode .session-toolbar {');
+    expect(html).toContain('body.challenge-mode #challengeInlineTopic {');
+    expect(html).toContain('background: transparent;');
+    expect(html).toContain('body.challenge-mode #challengeComposerFooter {');
+    expect(html).toContain('position: static;');
+    expect(html).toContain('body.challenge-mode #sessionMessageInput {');
+    expect(html).toContain('min-height: 112px;');
+    expect(html).toContain('.challenge-composer-footer {');
+    expect(html).toContain('body.challenge-mode #challengeWorkbenchComposer {');
+    expect(html).toContain('align-self: start;');
+    expect(html).toContain('body.challenge-mode #challengeTopicBriefRail {');
+    expect(html).toContain('max-height: calc(100vh - 40px);');
+    expect(html).toContain('overflow-y: auto;');
+  });
+
+  it('uses a topic intake compact layout that hides empty scaffolding on the first challenge screen', async () => {
+    const { renderSessionPage } = await import('../src/views/index.js');
+    const html = renderSessionPage('challenge-topic-intake-compact-test');
+
+    expect(html).toContain("document.body.classList.toggle('challenge-topic-intake', isTopicIntake);");
+    expect(html).toContain('body.challenge-mode.challenge-topic-intake #challengeCurrentRound {');
+    expect(html).toContain('body.challenge-mode.challenge-topic-intake #challengeHistoryInspector {');
+    expect(html).toContain('body.challenge-mode.challenge-topic-intake #challengeHistoryNav {');
+    expect(html).toContain('body.challenge-mode.challenge-topic-intake #challengeFramingCard {');
+    expect(html).toContain('body.challenge-mode.challenge-topic-intake #challengeConflictCard {');
+    expect(html).toContain('body.challenge-mode.challenge-topic-intake #sessionTimelinePanel,');
+    expect(html).toContain('body.challenge-mode.challenge-topic-intake #challengeWorkbenchShell {');
+    expect(html).toContain('position: static;');
+    expect(html).toContain('body.challenge-mode.challenge-topic-intake #challengeTopicBriefRail {');
+    expect(html).toContain('max-height: none;');
+    expect(html).toContain('body.challenge-mode.challenge-topic-intake #sessionMessageInput {');
+    expect(html).toContain('min-height: 96px;');
+  });
+
+  it('uses location-independent challenge guidance copy in the session shell', async () => {
+    const { renderSessionPage } = await import('../src/views/index.js');
+    const html = renderSessionPage('challenge-copy-test');
+
+    expect(html).not.toContain('请回应上面的质疑。');
+    expect(html).not.toContain('必须先处理上面的分歧');
+  });
+
+  it('auto-starts the first challenge round from the homepage topic instead of asking for duplicate input', async () => {
+    const { renderSessionPage } = await import('../src/views/index.js');
+    const html = renderSessionPage('challenge-auto-kickoff-test');
+
+    expect(html).toContain('function shouldAutoStartChallengeTopic(');
+    expect(html).toContain("data.session.currentPhase === 'topic_submitted'");
+    expect(html).toContain("content: data.session.topic");
+    expect(html).toContain("action: 'raw_topic'");
+    expect(html).toContain('正在根据首页议题启动第一轮');
+    expect(html).toContain("composerInput.value = data.session.topic");
+  });
+
+  it('hides collapsed challenge context correctly and renders current/history context with markdown instead of raw symbols', async () => {
+    const { renderSessionPage } = await import('../src/views/index.js');
+    const html = renderSessionPage('challenge-context-render-test');
+
+    expect(html).toContain('.challenge-context-list[hidden] {');
+    expect(html).toContain('display: none;');
+    expect(html).toContain("typeof renderMarkdown === 'function' ? renderMarkdown(item.content || '')");
+    expect(html).not.toContain("escapeHtml(item.content || '').replaceAll('\\\\n', '<br>')");
+  });
+
+  it('keeps next-round challenge copy explicit that this continues the current session rather than opening a new one', async () => {
+    const { renderSessionPage } = await import('../src/views/index.js');
+    const html = renderSessionPage('challenge-next-round-copy-test');
+
+    expect(html).toContain('进入下一轮追问');
+    expect(html).toContain('仍在当前会话里');
+    expect(html).toContain('下一轮要继续验证的追问');
+  });
+
+  it('renders strict challenge guard rails for focus-action selection, minimum response length and round caps', async () => {
+    const { renderSessionPage } = await import('../src/views/index.js');
+    const html = renderSessionPage('challenge-strict-guard-test');
+
+    expect(html).toContain('id="sessionMessageFocusAction"');
+    expect(html).toContain('focusActionInput.value = target.dataset.focusAction ||');
+    expect(html).toContain('至少 50 字');
+    expect(html).toContain('已达到质疑模式最大 5 轮');
   });
 });
 
 describe('Web Challenge Mode Checkpoints (Task 2)', () => {
   const previous: Record<string, string | undefined> = {};
+  const longChallengeResponse = '这个回应会逐条说明为什么当前质疑只部分成立，并补充真实案例、限制条件和仍需验证的证据，以便继续判断是否真的值得推进。';
 
   function useFakeProvider() {
     previous.mode = process.env.PROVIDER_MODE;
@@ -1012,6 +1256,7 @@ describe('Web Challenge Mode Checkpoints (Task 2)', () => {
         expect(step2Response.status).toBe(200);
         const step2 = await readJson<any>(step2Response);
         expect(step2.session.currentPhase).toBe('waiting_user_objection_response');
+        expect(step2.session.requiredUserAction).toBe('请直接回应当前轮中的关键质疑。');
         // assassin and userGhost should now be present
         const roleMessages = step2.modeState.messages.filter((m: { speaker: string }) => m.speaker === 'role');
         const roleIds = roleMessages.map((m: { roleId: string }) => m.roleId);
@@ -1051,7 +1296,7 @@ describe('Web Challenge Mode Checkpoints (Task 2)', () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            content: '鎴戣涓哄埡瀹㈢殑鍙嶉┏涓嶆垚绔嬶紝鐢ㄦ埛骞界伒鐨勬媴蹇ф垜鎺ュ彈涓€閮ㄥ垎銆?',
+            content: '我认为刺客的反驳并不完全成立，因为团队现在的问题不是多一个管理界面，而是资料和判断依据持续散落；用户幽灵的担忧我接受一部分，但这恰好说明需要把推进过程显式化。',
             action: 'objection_response',
             projectPath: testSessionsDir,
           }),
@@ -1100,7 +1345,7 @@ describe('Web Challenge Mode Checkpoints (Task 2)', () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            content: 'AI 可以缩短周期并降低成本，技术已经成熟，所以这不是问题。',
+            content: 'AI 可以缩短周期并降低成本，技术已经成熟，所以这不是问题；只要把模型接进流程里，资料分散、消息脱节和跨角色协作这些阻塞自然都会被解决掉。',
             action: 'objection_response',
             projectPath: testSessionsDir,
           }),
@@ -1112,6 +1357,192 @@ describe('Web Challenge Mode Checkpoints (Task 2)', () => {
         expect(interrupted.session.interactionState).toBe('blocked');
         expect(interrupted.session.nextRecommendedMode).toBeUndefined();
         expect(interrupted.conflicts.some((conflict: { type: string; }) => conflict.type === 'tech_escape')).toBe(true);
+      });
+    } finally {
+      restoreProvider();
+    }
+  });
+
+  it('rejects short objection responses so challenge mode keeps the CLI minimum-length discipline', async () => {
+    useFakeProvider();
+    try {
+      await withAppServer(async (baseUrl) => {
+        const createResponse = await fetch(`${baseUrl}/api/sessions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ topic: '验证 challenge 最短回应长度', projectPath: testSessionsDir }),
+        });
+        const created = await readJson<any>(createResponse);
+        const sessionId = created.session.sessionId;
+
+        await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: '先抛一个问题', action: 'raw_topic', projectPath: testSessionsDir }),
+        });
+
+        await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: '确认问题定义', action: 'problem_correction', projectPath: testSessionsDir }),
+        });
+
+        const response = await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content: '太短了',
+            action: 'objection_response',
+            projectPath: testSessionsDir,
+          }),
+        });
+
+        expect(response.status).toBe(400);
+        const payload = await readJson<any>(response);
+        expect(payload.error).toContain('至少 50 字');
+      });
+    } finally {
+      restoreProvider();
+    }
+  });
+
+  it('requires an explicit interrupt handling path before submitting a tech-escape response', async () => {
+    useFakeProvider();
+    try {
+      await withAppServer(async (baseUrl) => {
+        const createResponse = await fetch(`${baseUrl}/api/sessions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ topic: '验证 challenge 中断态处理路径', projectPath: testSessionsDir }),
+        });
+        const created = await readJson<any>(createResponse);
+        const sessionId = created.session.sessionId;
+
+        await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: '先抛一个问题', action: 'raw_topic', projectPath: testSessionsDir }),
+        });
+
+        await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: '确认问题定义', action: 'problem_correction', projectPath: testSessionsDir }),
+        });
+
+        const interruptResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content: 'AI 可以缩短周期并降低成本，技术已经成熟，所以这不是问题；只要把模型接进流程里，资料分散、消息脱节和跨角色协作这些阻塞自然都会被解决掉。',
+            action: 'objection_response',
+            projectPath: testSessionsDir,
+          }),
+        });
+        expect(interruptResponse.status).toBe(200);
+
+        const missingPathResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content: longChallengeResponse,
+            action: 'objection_response',
+            projectPath: testSessionsDir,
+          }),
+        });
+
+        expect(missingPathResponse.status).toBe(400);
+        const missingPathPayload = await readJson<any>(missingPathResponse);
+        expect(missingPathPayload.error).toContain('先选择一种处理路径');
+
+        const resolvedResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content: longChallengeResponse,
+            action: 'objection_response',
+            focusAction: 'business_goal',
+            projectPath: testSessionsDir,
+          }),
+        });
+
+        expect(resolvedResponse.status).toBe(200);
+      });
+    } finally {
+      restoreProvider();
+    }
+  });
+
+  it('stops challenge after five completed rounds and refuses to open a sixth round', async () => {
+    useFakeProvider();
+    try {
+      await withAppServer(async (baseUrl) => {
+        const createResponse = await fetch(`${baseUrl}/api/sessions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ topic: '验证 challenge 五轮封顶', projectPath: testSessionsDir }),
+        });
+        const created = await readJson<any>(createResponse);
+        const sessionId = created.session.sessionId;
+
+        for (let round = 0; round < 5; round += 1) {
+          const topicContent = round === 0 ? '第 1 轮原始议题' : `第 ${round + 1} 轮继续追问`;
+          const rawResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: topicContent, action: 'raw_topic', projectPath: testSessionsDir }),
+          });
+          expect(rawResponse.status).toBe(200);
+
+          const correctionResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: `第 ${round + 1} 轮修正问题定义`, action: 'problem_correction', projectPath: testSessionsDir }),
+          });
+          expect(correctionResponse.status).toBe(200);
+
+          const groundingResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              content: longChallengeResponse,
+              action: 'objection_response',
+              projectPath: testSessionsDir,
+            }),
+          });
+          expect(groundingResponse.status).toBe(200);
+          const grounded = await readJson<any>(groundingResponse);
+
+          expect(grounded.session.currentPhase).toBe('waiting_round_decision');
+          if (round < 4) {
+            const nextRoundResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                content: '进入下一轮追问',
+                action: 'round_resolution',
+                projectPath: testSessionsDir,
+              }),
+            });
+            expect(nextRoundResponse.status).toBe(200);
+          } else {
+            expect(grounded.session.requiredUserAction).toContain('最大 5 轮');
+          }
+        }
+
+        const blockedResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content: '进入下一轮追问',
+            action: 'round_resolution',
+            projectPath: testSessionsDir,
+          }),
+        });
+
+        expect(blockedResponse.status).toBe(409);
+        const blockedPayload = await readJson<any>(blockedResponse);
+        expect(blockedPayload.error).toContain('最大 5 轮');
       });
     } finally {
       restoreProvider();
@@ -1161,7 +1592,7 @@ describe('Web Decision Mode Checkpoints (Task 3)', () => {
         expect(switched.session.currentPhase).toBe('decision_prompt_submitted');
         expect(switched.session.requiredUserAction).toBeTruthy();
         expect(switched.session.nextRecommendedMode).toBeUndefined();
-        expect(switched.session.modeTransitionWarning).toContain('challenge');
+        expect(switched.session.modeTransitionWarning).toContain('质疑模式');
         expect(switched.session.recommendedRollbackMode).toBe('challenge');
       });
     } finally {

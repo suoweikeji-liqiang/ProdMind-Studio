@@ -111,6 +111,14 @@ const CHALLENGE_INTERRUPT_PHASES = [
   'waiting_tech_escape_response',
 ] as const;
 
+const CHALLENGE_MIN_RESPONSE_LENGTH = 50;
+const CHALLENGE_MAX_ROUNDS = 5;
+const CHALLENGE_INTERRUPT_FOCUS_ACTIONS: Record<(typeof CHALLENGE_INTERRUPT_PHASES)[number], string[]> = {
+  waiting_alternative_hypothesis_resolution: ['accept', 'counter', 'verify'],
+  waiting_false_consensus_break: ['broken_premise', 'name_gap', 'keep_pressing'],
+  waiting_tech_escape_response: ['business_goal', 'user_problem', 'execution_constraint'],
+};
+
 interface RequirementDraftArtifact {
   artifactType: RequirementArtifactType;
   title: string;
@@ -120,10 +128,17 @@ interface RequirementDraftArtifact {
 }
 
 const REQUIREMENT_ARTIFACT_TITLES: Record<RequirementArtifactType, string> = {
-  idea: 'Idea Draft',
-  spec: 'Spec Draft',
-  acceptance: 'Acceptance Draft',
-  tasks: 'Tasks Draft',
+  idea: '想法草稿',
+  spec: '规格草稿',
+  acceptance: '验收草稿',
+  tasks: '任务草稿',
+};
+
+const REQUIREMENT_ARTIFACT_LABELS: Record<RequirementArtifactType, string> = {
+  idea: '想法',
+  spec: '规格',
+  acceptance: '验收',
+  tasks: '任务',
 };
 
 const REQUIREMENT_ROLE_BY_ARTIFACT: Record<RequirementArtifactType, RoleIdentity> = {
@@ -350,13 +365,13 @@ function buildSharedContextSections(sharedContext: SharedContext): string[] {
   const sections: string[] = [];
 
   if (sharedContext.confirmedFacts.length > 0) {
-    sections.push(`Confirmed facts: ${sharedContext.confirmedFacts.join(' | ')}`);
+    sections.push(`已确认事实：${sharedContext.confirmedFacts.join(' | ')}`);
   }
   if (sharedContext.hardConstraints.length > 0) {
-    sections.push(`Hard constraints: ${sharedContext.hardConstraints.join(' | ')}`);
+    sections.push(`硬约束：${sharedContext.hardConstraints.join(' | ')}`);
   }
   if (sharedContext.sourceReferences.length > 0) {
-    sections.push(`Sources: ${sharedContext.sourceReferences.join(' | ')}`);
+    sections.push(`参考资料：${sharedContext.sourceReferences.join(' | ')}`);
   }
 
   return sections;
@@ -368,7 +383,7 @@ function buildSharedContextPrompt(sharedContext: SharedContext): string {
     return '';
   }
 
-  return ['Shared context:', ...sections].join('\n');
+  return ['共享底稿：', ...sections].join('\n');
 }
 
 function appendSharedContextSummary(summary: string, sharedContext: SharedContext): string {
@@ -388,16 +403,16 @@ function buildRequirementProjectState(session: ConversationSession, modeState: M
   const contextLines = [
     session.topic,
     ...(session.sharedContext.confirmedFacts.length > 0
-      ? [`Confirmed facts: ${session.sharedContext.confirmedFacts.join(' | ')}`]
+      ? [`已确认事实：${session.sharedContext.confirmedFacts.join(' | ')}`]
       : []),
     ...(session.sharedContext.sourceReferences.length > 0
-      ? [`Sources: ${session.sharedContext.sourceReferences.join(' | ')}`]
+      ? [`参考资料：${session.sharedContext.sourceReferences.join(' | ')}`]
       : []),
   ];
   const boundaryLines = [
     '单议题会话，不考虑协同，产物通过草稿与定稿版本持续累积。',
     ...(session.sharedContext.hardConstraints.length > 0
-      ? [`Hard constraints: ${session.sharedContext.hardConstraints.join(' | ')}`]
+      ? [`硬约束：${session.sharedContext.hardConstraints.join(' | ')}`]
       : []),
   ];
 
@@ -418,20 +433,24 @@ function buildRequirementProjectState(session: ConversationSession, modeState: M
       boundary: boundaryLines.join('\n'),
     },
     lastCompression: {
-      oneLiner: `${session.topic} 的 requirement-build 草稿`,
+      oneLiner: `${session.topic} 的需求草稿`,
       threeLiner: [
         `议题：${session.topic}`,
         `当前输入：${latestInput}`,
         ...(sharedContextSections.length > 0 ? [`共享底稿：${sharedContextSections.join('；')}`] : []),
-        '目标：产出 idea/spec/acceptance/tasks 四份可持续更新的草稿。',
+        '目标：产出想法、规格、验收、任务四份可持续更新的草稿。',
       ].join('\n'),
       structured: JSON.stringify(
         {
-          topic: session.topic,
-          latestInput,
-          messageCount: modeState.messages.length,
-          currentMode: 'requirement-build',
-          sharedContext: session.sharedContext,
+          议题: session.topic,
+          当前输入: latestInput,
+          消息数: modeState.messages.length,
+          当前模式: '需求共建模式',
+          共享底稿: {
+            硬约束: session.sharedContext.hardConstraints,
+            已确认事实: session.sharedContext.confirmedFacts,
+            参考资料: session.sharedContext.sourceReferences,
+          },
         },
         null,
         2
@@ -439,9 +458,9 @@ function buildRequirementProjectState(session: ConversationSession, modeState: M
     },
     lastBusinessAssumptions: [
       '使用者会先用多轮对话澄清问题，再手动定稿结构化产物。',
-      ...session.sharedContext.confirmedFacts.map((fact) => `Confirmed fact: ${fact}`),
-      ...session.sharedContext.hardConstraints.map((constraint) => `Hard constraint: ${constraint}`),
-      ...session.sharedContext.sourceReferences.map((source) => `Source reference: ${source}`),
+      ...session.sharedContext.confirmedFacts.map((fact) => `已确认事实：${fact}`),
+      ...session.sharedContext.hardConstraints.map((constraint) => `硬约束：${constraint}`),
+      ...session.sharedContext.sourceReferences.map((source) => `参考资料：${source}`),
     ],
     lastGuardWarnings: [],
   };
@@ -457,35 +476,36 @@ function buildRequirementRoleMessages(
       speaker: 'role',
       roleId: 'requirements',
       roleName: '需求师',
-      content: `已整理 idea 草稿。\n${summarizeDraftContent(drafts.idea.content, '尚未形成 idea 草稿。')}`,
+      content: `已整理想法草稿。\n${summarizeDraftContent(drafts.idea.content, '尚未形成想法草稿。')}`,
       timestamp,
     },
     {
       speaker: 'role',
       roleId: 'user-representative',
       roleName: '用户代表',
-      content: `已补充 spec 里的用户价值与使用方式。\n${summarizeDraftContent(drafts.spec.content, '尚未形成 spec 草稿。')}`,
+      content: `已补充规格草稿里的用户价值与使用方式。\n${summarizeDraftContent(drafts.spec.content, '尚未形成规格草稿。')}`,
       timestamp,
     },
     {
       speaker: 'role',
       roleId: 'implementation',
       roleName: '实施工程师',
-      content: `已整理 tasks 草稿里的实现拆分。\n${summarizeDraftContent(drafts.tasks.content, '尚未形成 tasks 草稿。')}`,
+      content: `已整理任务草稿里的实现拆分。\n${summarizeDraftContent(drafts.tasks.content, '尚未形成任务草稿。')}`,
       timestamp,
     },
     {
       speaker: 'role',
       roleId: 'acceptance',
       roleName: '验收官',
-      content: `已补充 acceptance 草稿里的验收边界。\n${summarizeDraftContent(drafts.acceptance.content, '尚未形成 acceptance 草稿。')}`,
+      content: `已补充验收草稿里的验收边界。\n${summarizeDraftContent(drafts.acceptance.content, '尚未形成验收草稿。')}`,
       timestamp,
     },
   ];
 }
 
 function buildRequirementDraftSummary(drafts: Record<RequirementArtifactType, { updatedAt: string }>): string {
-  return `requirement-build 已更新 ${REQUIREMENT_ARTIFACT_TYPES.length} 份草稿：${REQUIREMENT_ARTIFACT_TYPES.join(' / ')}。最近更新时间 ${drafts.spec.updatedAt}。`;
+  const artifactLabels = REQUIREMENT_ARTIFACT_TYPES.map((artifactType) => REQUIREMENT_ARTIFACT_LABELS[artifactType]).join(' / ');
+  return `需求共建模式已更新 ${REQUIREMENT_ARTIFACT_TYPES.length} 份草稿：${artifactLabels}。最近更新时间 ${drafts.spec.updatedAt}。`;
 }
 
 function parseRequirementArtifactType(content: string): RequirementArtifactType | null {
@@ -535,6 +555,56 @@ function resolveRequirementAction(rawAction: string | undefined, currentPhase: s
 
 function isChallengeInterruptPhase(currentPhase: string): currentPhase is (typeof CHALLENGE_INTERRUPT_PHASES)[number] {
   return CHALLENGE_INTERRUPT_PHASES.includes(currentPhase as (typeof CHALLENGE_INTERRUPT_PHASES)[number]);
+}
+
+function countCompletedChallengeRounds(messages: ModeMessage[]): number {
+  return messages.filter((message) => message.speaker === 'role' && message.roleId === 'grounder').length;
+}
+
+function validateChallengeTurnInput(
+  state: LiveSessionState,
+  action: ChallengeAction,
+  content: string,
+  focusAction: string | undefined,
+): { status: number; error: string } | null {
+  const trimmed = content.trim();
+  const phase = state.session.currentPhase;
+  const messages = state.modeStates.challenge?.messages ?? [];
+
+  if (action === 'objection_response') {
+    if (trimmed.length < CHALLENGE_MIN_RESPONSE_LENGTH) {
+      return {
+        status: 400,
+        error: `当前阶段的回应至少 ${CHALLENGE_MIN_RESPONSE_LENGTH} 字，避免一句话跳过关键质疑。`,
+      };
+    }
+
+    if (isChallengeInterruptPhase(phase)) {
+      const selectedAction = focusAction?.trim();
+      if (!selectedAction) {
+        return {
+          status: 400,
+          error: '当前中断态必须先选择一种处理路径，再提交回应。',
+        };
+      }
+
+      if (!CHALLENGE_INTERRUPT_FOCUS_ACTIONS[phase].includes(selectedAction)) {
+        return {
+          status: 400,
+          error: '当前中断态的处理路径无效，请重新选择一个明确动作。',
+        };
+      }
+    }
+  }
+
+  if (action === 'round_resolution' && countCompletedChallengeRounds(messages) >= CHALLENGE_MAX_ROUNDS) {
+    return {
+      status: 409,
+      error: `已达到质疑模式最大 ${CHALLENGE_MAX_ROUNDS} 轮，请改为切换模式或回看本轮结论。`,
+    };
+  }
+
+  return null;
 }
 
 function resolveChallengeAction(rawAction: string | undefined, currentPhase: string): ChallengeAction {
@@ -590,7 +660,7 @@ function buildRequirementGoalMessage(suggestedArtifact: RequirementArtifactType)
     speaker: 'role',
     roleId: 'requirements',
     roleName: '需求师',
-    content: `我已记录你的 requirement 目标。建议先推进 ${suggestedArtifact} 层；请发送 action=artifact_selection 并确认层级。`,
+    content: `我已记录你的需求目标。建议先推进“${REQUIREMENT_ARTIFACT_LABELS[suggestedArtifact]}”这一层。请直接点击下方层级按钮，或回复想法 / 规格 / 验收 / 任务。`,
     timestamp: new Date().toISOString(),
   };
 }
@@ -602,11 +672,12 @@ function buildRequirementRoleMessage(
 ): ModeMessage {
   const role = REQUIREMENT_ROLE_BY_ARTIFACT[artifactType];
   const actionLabel = mode === 'selection' ? '已生成' : '已更新';
+  const artifactLabel = REQUIREMENT_ARTIFACT_LABELS[artifactType];
   return {
     speaker: 'role',
     roleId: role.roleId,
     roleName: role.roleName,
-    content: `${actionLabel} ${artifactType} 草稿。\n${summarizeDraftContent(draft.content, `${artifactType} 草稿待完善。`)}`,
+    content: `${actionLabel}${artifactLabel}草稿。\n${summarizeDraftContent(draft.content, `${artifactLabel}草稿待完善。`)}`,
     timestamp: new Date().toISOString(),
   };
 }
@@ -617,11 +688,11 @@ function buildRequirementDraftSummaryByArtifact(
   mode: 'selection' | 'revision' | 'goal'
 ): string {
   if (mode === 'goal') {
-    return 'requirement-build 已记录目标，等待你选择要推进的资产层。';
+    return '需求目标已记录，等待你选择要推进的草稿层。';
   }
 
   const actionLabel = mode === 'selection' ? '已生成' : '已更新';
-  return `requirement-build ${actionLabel} ${artifactType} 草稿。最近更新时间 ${draft.updatedAt}。`;
+  return `需求共建模式${actionLabel}${REQUIREMENT_ARTIFACT_LABELS[artifactType]}草稿。最近更新时间 ${draft.updatedAt}。`;
 }
 
 function buildDecisionProblem(session: ConversationSession, content: string): string {
@@ -649,24 +720,24 @@ function getInterruptTransition(conflicts: ChallengeConflict[] | undefined): {
   if (conflicts.some((conflict) => conflict.type === 'tech_escape')) {
     return {
       phase: 'waiting_tech_escape_response',
-      requiredUserAction: 'Respond to the objections without escaping into technology-first claims.',
-      lastCompletedStep: 'tech escape detected',
+      requiredUserAction: '请正面回应这些质疑，不要把讨论逃到“技术自然会解决”上。',
+      lastCompletedStep: '已检测到技术逃逸',
     };
   }
 
   if (conflicts.some((conflict) => conflict.type === 'alternative_hypothesis')) {
     return {
       phase: 'waiting_alternative_hypothesis_resolution',
-      requiredUserAction: 'Address the stronger alternative hypothesis before continuing.',
-      lastCompletedStep: 'alternative hypothesis detected',
+      requiredUserAction: '请先处理更强的替代假设，再决定是否继续。',
+      lastCompletedStep: '已检测到替代假设',
     };
   }
 
   if (conflicts.some((conflict) => conflict.type === 'consensus_alert')) {
     return {
       phase: 'waiting_false_consensus_break',
-      requiredUserAction: 'Break the false consensus and state what still does not hold.',
-      lastCompletedStep: 'false consensus detected',
+      requiredUserAction: '请打破这段伪共识，明确哪些前提仍然不成立。',
+      lastCompletedStep: '已检测到伪共识',
     };
   }
 
@@ -691,14 +762,14 @@ function buildSessionGuidance(state: LiveSessionState): {
 } {
   if (state.session.currentMode === 'decision' && !hasCompletedChallengeRound(state)) {
     return {
-      modeTransitionWarning: 'challenge 尚未完成至少一轮问题定义与质疑回应，当前进入 decision 的比较框架可能不稳定。',
+      modeTransitionWarning: '质疑模式尚未完成至少一轮问题定义与质疑回应，现在切到裁决模式会让比较框架不稳定。',
       recommendedRollbackMode: 'challenge',
     };
   }
 
   if (state.session.currentMode === 'requirement-build' && !hasDecisionVerdict(state)) {
     return {
-      modeTransitionWarning: 'decision 尚未形成明确 recommendation，当前进入 requirement-build 容易把未定方案过早沉淀成资产。',
+      modeTransitionWarning: '裁决模式还没有形成明确结论，现在进入需求共建模式，容易把未定方案过早沉淀成产物。',
       recommendedRollbackMode: 'decision',
     };
   }
@@ -706,7 +777,7 @@ function buildSessionGuidance(state: LiveSessionState): {
   if (isChallengeInterruptPhase(state.session.currentPhase)) {
     if (state.session.currentPhase === 'waiting_tech_escape_response') {
       return {
-        modeTransitionWarning: '系统检测到 technology-first 逃逸，建议先回应真实需求和验证路径，再继续收敛。',
+        modeTransitionWarning: '系统检测到“技术先行”逃逸，建议先回应真实需求和验证路径，再继续收敛。',
       };
     }
     if (state.session.currentPhase === 'waiting_alternative_hypothesis_resolution') {
@@ -726,6 +797,26 @@ function buildSessionView(state: LiveSessionState) {
   return {
     ...state.session,
     ...buildSessionGuidance(state),
+  };
+}
+
+async function buildSessionHistoryView(projectPath: string, session: ConversationSession) {
+  const liveState = (await getLiveSession(projectPath, session.sessionId)) ?? {
+    session,
+    modeStates: {},
+  };
+  const artifactSets = await Promise.all(
+    (['challenge', 'decision', 'requirement-build'] as const).map((mode) => loadModeArtifacts(projectPath, session.sessionId, mode)),
+  );
+  const hasDraftArtifacts = artifactSets.some((artifacts) => Object.keys(artifacts.drafts ?? {}).length > 0);
+  const hasFinalizedArtifacts = artifactSets.some((artifacts) => (
+    Object.values(artifacts.finalized ?? {}).some((versions) => Array.isArray(versions) && versions.length > 0)
+  ));
+
+  return {
+    ...buildSessionView(liveState),
+    hasDraftArtifacts,
+    hasFinalizedArtifacts,
   };
 }
 
@@ -954,7 +1045,9 @@ sessionsRouter.get('/', async (req: Request, res: Response) => {
   const projectPath = (req.query.projectPath as string) || './prodmind-project';
   const sessions = await sessionPersistence.listSessions(projectPath);
 
-  return res.json({ sessions });
+  return res.json({
+    sessions: await Promise.all(sessions.map((session) => buildSessionHistoryView(projectPath, session))),
+  });
 });
 
 sessionsRouter.get('/:id', async (req: Request, res: Response) => {
@@ -1025,6 +1118,30 @@ sessionsRouter.post('/:id/messages', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'content required' });
   }
 
+  const currentState = await getLiveSession(projectPath, id);
+  if (!currentState) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+
+  const challengeAction = currentState.session.currentMode === 'challenge'
+    ? resolveChallengeAction(
+      (req.body as Record<string, string>).action,
+      currentState.session.currentPhase,
+    )
+    : null;
+
+  if (challengeAction) {
+    const validation = validateChallengeTurnInput(
+      currentState,
+      challengeAction,
+      String(content),
+      typeof req.body.focusAction === 'string' ? req.body.focusAction : undefined,
+    );
+    if (validation) {
+      return res.status(validation.status).json({ error: validation.error });
+    }
+  }
+
   const initialResult = await appendLiveUserMessage(projectPath, id, content);
   if (!initialResult) {
     return res.status(404).json({ error: 'Session not found' });
@@ -1061,7 +1178,7 @@ sessionsRouter.post('/:id/messages', async (req: Request, res: Response) => {
             roleSet: DECISION_ROLE_SET,
             draftSummary: {
               summary: appendSharedContextSummary(
-                'decision frame generated; waiting frame confirmation.',
+                '决策框架已生成，等待你确认或修正。',
                 result.state.session.sharedContext,
               ),
               updatedAt: new Date().toISOString(),
@@ -1076,8 +1193,8 @@ sessionsRouter.post('/:id/messages', async (req: Request, res: Response) => {
             projectPath,
             id,
             'waiting_user_frame_confirmation',
-            'Confirm or correct the decision frame.',
-            'decision frame generated',
+            '请确认或修正决策框架。',
+            '决策框架已生成',
           );
 
           const finalState = await getLiveSession(projectPath, id);
@@ -1102,7 +1219,7 @@ sessionsRouter.post('/:id/messages', async (req: Request, res: Response) => {
             roleSet: DECISION_ROLE_SET,
             draftSummary: {
               summary: appendSharedContextSummary(
-                'tradeoff analysis generated; waiting priority adjustment.',
+                '权衡分析已生成，等待你调整优先级。',
                 result.state.session.sharedContext,
               ),
               updatedAt: new Date().toISOString(),
@@ -1117,8 +1234,8 @@ sessionsRouter.post('/:id/messages', async (req: Request, res: Response) => {
             projectPath,
             id,
             'waiting_user_priority_adjustment',
-            'Adjust priorities or weighting before recommendation.',
-            'tradeoff analysis completed',
+            '请先调整优先级或权重，再进入推荐结论。',
+            '权衡分析已完成',
           );
 
           const finalState = await getLiveSession(projectPath, id);
@@ -1154,8 +1271,8 @@ sessionsRouter.post('/:id/messages', async (req: Request, res: Response) => {
             projectPath,
             id,
             'waiting_decision_resolution',
-            'Review the recommendation, then send action=decision_resolution or switch mode.',
-            'recommendation synthesized',
+            '请审阅推荐结论，然后决定收束本模式还是切换模式。',
+            '推荐结论已生成',
             'requirement-build',
           );
 
@@ -1172,8 +1289,8 @@ sessionsRouter.post('/:id/messages', async (req: Request, res: Response) => {
           projectPath,
           id,
           'decision_prompt_submitted',
-          'Enter the next decision problem or switch mode.',
-          'decision resolution recorded',
+          '请输入下一个决策问题，或切换模式。',
+          '已记录决策结论',
         );
 
         const finalState = await getLiveSession(projectPath, id);
@@ -1209,7 +1326,7 @@ sessionsRouter.post('/:id/messages', async (req: Request, res: Response) => {
           const updated = await appendLiveRoleMessages(projectPath, id, [goalMessage], {
             roleSet: REQUIREMENT_ROLE_SET,
             draftSummary: {
-              summary: 'requirement-build goal captured; waiting artifact selection.',
+              summary: '已记录产物目标，等待你选择要推进的产物层级。',
               updatedAt: new Date().toISOString(),
             },
           });
@@ -1217,13 +1334,13 @@ sessionsRouter.post('/:id/messages', async (req: Request, res: Response) => {
             return res.status(404).json({ error: 'Session not found' });
           }
 
-          await transitionSessionPhase(
-            projectPath,
-            id,
-            'waiting_user_artifact_selection',
-            'Select artifact layer (idea/spec/acceptance/tasks).',
-            'requirement goal captured',
-          );
+        await transitionSessionPhase(
+          projectPath,
+          id,
+          'waiting_user_artifact_selection',
+          '请选择要推进的产物层级：想法、规格、验收或任务。',
+          '已记录产物目标',
+        );
 
           const finalState = await getLiveSession(projectPath, id);
           return res.status(200).json({
@@ -1244,8 +1361,8 @@ sessionsRouter.post('/:id/messages', async (req: Request, res: Response) => {
             projectPath,
             id,
             'artifact_finalized',
-            'Continue with artifact_goal or switch mode.',
-            'artifact finalized',
+            '你可以继续发起新的产物目标，或切换模式。',
+            '已完成产物定稿',
           );
 
           const finalState = await getLiveSession(projectPath, id);
@@ -1263,7 +1380,7 @@ sessionsRouter.post('/:id/messages', async (req: Request, res: Response) => {
           : explicitArtifact ?? parseRequirementArtifactType(modeState.draftArtifacts[modeState.draftArtifacts.length - 1] ?? '');
         if (!artifactType) {
           return res.status(400).json({
-            error: 'artifact type required (idea/spec/acceptance/tasks)',
+            error: '请选择要推进的草稿层级：想法、规格、验收或任务。',
           });
         }
 
@@ -1323,11 +1440,11 @@ sessionsRouter.post('/:id/messages', async (req: Request, res: Response) => {
             ? 'waiting_user_draft_revision'
             : 'ready_for_downstream_or_finalize',
           requirementAction === 'artifact_selection'
-            ? 'Review draft then send action=draft_revision.'
-            : 'Continue with draft_revision or finalization_note.',
+            ? '请先审阅草稿，再决定是否继续修订。'
+            : '你可以继续修订草稿，或直接补充定稿备注。',
           requirementAction === 'artifact_selection'
-            ? `draft generated: ${artifactType}`
-            : `draft updated: ${artifactType}`,
+            ? `已生成${REQUIREMENT_ARTIFACT_LABELS[artifactType]}草稿`
+            : `已更新${REQUIREMENT_ARTIFACT_LABELS[artifactType]}草稿`,
         );
 
         const finalState = await getLiveSession(projectPath, id);
@@ -1352,7 +1469,7 @@ sessionsRouter.post('/:id/messages', async (req: Request, res: Response) => {
     });
   }
 
-  const action = resolveChallengeAction(
+  const action = challengeAction ?? resolveChallengeAction(
     (req.body as Record<string, string>).action,
     result.state.session.currentPhase,
   );
@@ -1365,7 +1482,7 @@ sessionsRouter.post('/:id/messages', async (req: Request, res: Response) => {
       const architectMessage: ModeMessage = {
         speaker: 'role',
         roleId: 'architect',
-        roleName: 'architect',
+        roleName: '架构师',
         content: architect,
         timestamp: new Date().toISOString(),
       };
@@ -1380,8 +1497,8 @@ sessionsRouter.post('/:id/messages', async (req: Request, res: Response) => {
         projectPath,
         id,
         'waiting_user_problem_correction',
-        'Confirm or correct the problem framing.',
-        'architect framing completed',
+        '请确认或修正问题定义。',
+        '架构师已完成问题定义',
       );
 
       const finalState = await getLiveSession(projectPath, id);
@@ -1402,8 +1519,8 @@ sessionsRouter.post('/:id/messages', async (req: Request, res: Response) => {
       const { assassin, userGhost } = await runObjectionGeneration(adapter, architect, content);
       const timestamp = new Date().toISOString();
       const roleMessages: ModeMessage[] = [
-        { speaker: 'role', roleId: 'assassin', roleName: 'assassin', content: assassin, timestamp },
-        { speaker: 'role', roleId: 'userGhost', roleName: 'userGhost', content: userGhost, timestamp },
+        { speaker: 'role', roleId: 'assassin', roleName: '刺客', content: assassin, timestamp },
+        { speaker: 'role', roleId: 'userGhost', roleName: '用户幽灵', content: userGhost, timestamp },
       ];
       const updated = await appendLiveRoleMessages(projectPath, id, roleMessages, {
         roleSet: CHALLENGE_ROLE_SET,
@@ -1416,8 +1533,8 @@ sessionsRouter.post('/:id/messages', async (req: Request, res: Response) => {
         projectPath,
         id,
         'waiting_user_objection_response',
-        'Respond to the objections above.',
-        'objections generated',
+        '请直接回应当前轮中的关键质疑。',
+        '反方质疑已生成',
       );
 
       const finalState = await getLiveSession(projectPath, id);
@@ -1441,7 +1558,7 @@ sessionsRouter.post('/:id/messages', async (req: Request, res: Response) => {
       const grounderMessage: ModeMessage = {
         speaker: 'role',
         roleId: 'grounder',
-        roleName: 'grounder',
+        roleName: '锚点官',
         content: grounder,
         timestamp: new Date().toISOString(),
       };
@@ -1475,13 +1592,22 @@ sessionsRouter.post('/:id/messages', async (req: Request, res: Response) => {
           interruptTransition.requiredUserAction,
           interruptTransition.lastCompletedStep,
         );
+      } else if (completedRoundCount >= CHALLENGE_MAX_ROUNDS) {
+        await transitionSessionPhase(
+          projectPath,
+          id,
+          'waiting_round_decision',
+          `已达到质疑模式最大 ${CHALLENGE_MAX_ROUNDS} 轮，请改为切换模式或回看本轮结论。`,
+          '已达到最大轮次',
+          'decision',
+        );
       } else {
         await transitionSessionPhase(
           projectPath,
           id,
           'waiting_round_decision',
-          'Round completed. Send action=round_resolution to continue or switch mode.',
-          'grounding completed',
+          '本轮已完成。你可以进入下一轮追问，或切换到其他模式。',
+          '本轮收束已完成',
           'decision',
         );
       }
@@ -1501,8 +1627,8 @@ sessionsRouter.post('/:id/messages', async (req: Request, res: Response) => {
         projectPath,
         id,
         'topic_submitted',
-        'Enter the next round topic/correction.',
-        'next round initialized',
+        '请输入下一轮要继续验证的追问、反例或修正；仍在当前会话里，不会新建会话。',
+        '已初始化下一轮',
       );
 
       const finalState = await getLiveSession(projectPath, id);
@@ -1541,8 +1667,8 @@ sessionsRouter.post('/:id/artifacts/finalize', async (req: Request, res: Respons
     projectPath,
     id,
     'artifact_finalized',
-    'Continue with artifact_goal or switch mode.',
-    'artifact finalized',
+    '你可以继续发起新的产物目标，或切换模式。',
+    '已完成产物定稿',
   );
 
   const finalState = await getLiveSession(projectPath, id);

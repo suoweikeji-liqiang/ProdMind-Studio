@@ -15,31 +15,44 @@ export interface RequirementDraftArtifact {
 export type RequirementDraftPack = Record<RequirementArtifactType, RequirementDraftArtifact>;
 
 const REQUIREMENT_ARTIFACT_TITLES: Record<RequirementArtifactType, string> = {
-  idea: 'Idea Draft',
-  spec: 'Spec Draft',
-  acceptance: 'Acceptance Draft',
-  tasks: 'Tasks Draft',
+  idea: '想法草稿',
+  spec: '规格草稿',
+  acceptance: '验收草稿',
+  tasks: '任务草稿',
 };
+
+function describeClarityStage(stage: ProjectState['clarityStage']): string {
+  if (stage === 'concept') {
+    return '概念阶段';
+  }
+  if (stage === 'direction') {
+    return '方向澄清';
+  }
+  if (stage === 'structure') {
+    return '结构整理';
+  }
+  return '可执行阶段';
+}
 
 function readOpenPoints(state: ProjectState): string[] {
   const points: string[] = [];
   const projection = state.projection;
 
   if (!projection?.context?.trim()) {
-    points.push('Clarify the operational context.');
+    points.push('补清当前使用场景和推进背景。');
   }
   if (!projection?.actors?.trim()) {
-    points.push('Identify primary actors.');
+    points.push('明确这件事主要影响哪些角色。');
   }
   if (!projection?.boundary?.trim()) {
-    points.push('Define boundaries and exclusions.');
+    points.push('补齐边界条件和明确不做什么。');
   }
   if ((state.lastGuardWarnings ?? []).length > 0) {
     points.push(...(state.lastGuardWarnings ?? []));
   }
 
   if (points.length === 0) {
-    points.push('Refine open points from current compression.');
+    points.push('继续细化当前压缩稿里的未决问题。');
   }
 
   return points;
@@ -53,34 +66,34 @@ export function createAssetWriter(): AssetWriter {
       const projection = state.projection;
 
       const content = [
-        '# Idea',
+        '# 想法草稿',
         '',
-        `## Project`,
-        `- ID: ${state.id}`,
-        `- Idea: ${state.idea}`,
+        '## 项目',
+        `- 会话 ID：${state.id}`,
+        `- 核心议题：${state.idea}`,
         '',
-        '## One-Liner',
+        '## 一句话',
         compression?.oneLiner ?? '',
         '',
-        '## Projection',
-        `- Context: ${projection?.context ?? ''}`,
-        `- Actors: ${projection?.actors ?? ''}`,
-        `- Intent: ${projection?.intent ?? ''}`,
-        `- Mechanism: ${projection?.mechanism ?? ''}`,
-        `- Boundary: ${projection?.boundary ?? ''}`,
+        '## 场景投射',
+        `- 背景：${projection?.context ?? ''}`,
+        `- 主要角色：${projection?.actors ?? ''}`,
+        `- 本轮意图：${projection?.intent ?? ''}`,
+        `- 推进机制：${projection?.mechanism ?? ''}`,
+        `- 边界与排除：${projection?.boundary ?? ''}`,
         '',
-        '## Three-Liner',
+        '## 三句话',
         compression?.threeLiner ?? '',
         '',
-        '## Structured',
+        '## 结构化底稿',
         '```json',
         compression?.structured ?? '{}',
         '```',
         '',
-        '## Stage',
-        state.clarityStage,
+        '## 当前阶段',
+        describeClarityStage(state.clarityStage),
         '',
-        '## Open Points',
+        '## 待补问题',
         ...openPoints.map((value) => `- ${value}`),
         '',
       ].join('\n');
@@ -95,27 +108,27 @@ export function createAssetWriter(): AssetWriter {
       const compression = state.lastCompression;
 
       const content = [
-        '# Spec',
+        '# 规格草稿',
         '',
-        `## Project`,
-        `- ID: ${state.id}`,
-        `- Idea: ${state.idea}`,
-        `- Stage: ${state.clarityStage}`,
+        '## 项目',
+        `- 会话 ID：${state.id}`,
+        `- 核心议题：${state.idea}`,
+        `- 当前阶段：${describeClarityStage(state.clarityStage)}`,
         '',
-        '## Projection',
-        `- Context: ${projection?.context ?? ''}`,
-        `- Actors: ${projection?.actors ?? ''}`,
-        `- Intent: ${projection?.intent ?? ''}`,
-        `- Mechanism: ${projection?.mechanism ?? ''}`,
-        `- Boundary: ${projection?.boundary ?? ''}`,
+        '## 场景投射',
+        `- 背景：${projection?.context ?? ''}`,
+        `- 主要角色：${projection?.actors ?? ''}`,
+        `- 本轮意图：${projection?.intent ?? ''}`,
+        `- 推进机制：${projection?.mechanism ?? ''}`,
+        `- 边界与排除：${projection?.boundary ?? ''}`,
         '',
-        '## Compression',
-        `- One-liner: ${compression?.oneLiner ?? ''}`,
+        '## 压缩摘要',
+        `- 一句话：${compression?.oneLiner ?? ''}`,
         '',
-        '### Three-liner',
+        '### 三句话',
         compression?.threeLiner ?? '',
         '',
-        '### Structured',
+        '### 结构化底稿',
         '```json',
         compression?.structured ?? '{}',
         '```',
@@ -132,18 +145,18 @@ export function createAssetWriter(): AssetWriter {
       const assumptions = state.lastBusinessAssumptions ?? [];
 
       const lines: string[] = [
-        '# Acceptance Criteria',
+        '# 验收草稿',
         '',
-        `- Clarity stage is \`${state.clarityStage}\``,
-        '- Output artifacts exist: `spec.md`, `acceptance.md`, `tasks.md`',
+        `- 当前清晰度阶段：\`${describeClarityStage(state.clarityStage)}\``,
+        '- 关联产物：`spec.md`、`acceptance.md`、`tasks.md`',
       ];
 
       if (assumptions.length > 0) {
-        lines.push('', '### Business Assumptions', ...assumptions.map((value: string) => `- ${value}`));
+        lines.push('', '### 业务假设', ...assumptions.map((value: string) => `- ${value}`));
       }
 
       if (warnings.length > 0) {
-        lines.push('', '### Guard Warnings', ...warnings.map((value: string) => `- ${value}`));
+        lines.push('', '### 风险提醒', ...warnings.map((value: string) => `- ${value}`));
       }
 
       lines.push('');
@@ -158,11 +171,11 @@ export function createAssetWriter(): AssetWriter {
       const openPoints = readOpenPoints(state);
       const oneLiner = state.lastCompression?.oneLiner?.trim();
 
-      const lines: string[] = ['# Tasks', ''];
+      const lines: string[] = ['# 任务草稿', ''];
       if (oneLiner) {
-        lines.push(`- Align implementation with scope: ${oneLiner}`);
+        lines.push(`- 先对齐当前范围：${oneLiner}`);
       }
-      lines.push('- Refine open points from current compression.');
+      lines.push('- 继续补齐当前压缩稿里的未决问题。');
       lines.push(...openPoints.map((value) => `- ${value}`));
       lines.push('');
       const content = lines.join('\n');
