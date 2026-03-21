@@ -536,6 +536,12 @@ const layout = (title: string, content: string) => `<!DOCTYPE html>
       gap: 12px;
       min-width: 0;
     }
+    .session-toolbar-actions {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+    }
     .session-toolbar-label {
       display: inline-flex;
       align-items: center;
@@ -827,6 +833,65 @@ const layout = (title: string, content: string) => `<!DOCTYPE html>
     }
     .challenge-focus-copy h2 {
       margin-bottom: 6px;
+    }
+    .challenge-checklist-panel {
+      display: grid;
+      gap: 12px;
+      padding: 16px 18px;
+      border-radius: 18px;
+      border: 1px solid rgba(87, 73, 43, 0.12);
+      background: rgba(255, 255, 255, 0.68);
+    }
+    .challenge-checklist-panel strong {
+      color: #423b2e;
+    }
+    .challenge-checklist-list {
+      display: grid;
+      gap: 10px;
+    }
+    .challenge-checklist-item {
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(87, 73, 43, 0.1);
+      background: rgba(255, 255, 255, 0.74);
+    }
+    .challenge-checklist-item.done {
+      border-color: rgba(22, 101, 52, 0.24);
+      background: rgba(220, 252, 231, 0.82);
+    }
+    .challenge-checklist-item.pending {
+      border-color: rgba(153, 27, 27, 0.16);
+      background: rgba(255, 248, 240, 0.82);
+    }
+    .challenge-checklist-status {
+      display: inline-flex;
+      align-items: center;
+      margin-right: 8px;
+      font-weight: 700;
+    }
+    .challenge-checklist-detail {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.5;
+    }
+    .challenge-handoff-summary {
+      padding-top: 10px;
+      border-top: 1px solid rgba(87, 73, 43, 0.1);
+    }
+    .challenge-mode-gate-list {
+      display: grid;
+      gap: 10px;
+    }
+    .challenge-mode-gate-item {
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(87, 73, 43, 0.1);
+      background: rgba(255, 255, 255, 0.74);
+    }
+    .challenge-mode-gate-item.enabled {
+      border-color: rgba(15, 118, 110, 0.24);
+      background: rgba(214, 243, 239, 0.55);
     }
     .challenge-round-header {
       display: flex;
@@ -1292,6 +1357,9 @@ const layout = (title: string, content: string) => `<!DOCTYPE html>
       .session-toolbar {
         grid-template-columns: 1fr;
       }
+      .session-toolbar-actions {
+        justify-content: flex-start;
+      }
       .challenge-round-header {
         flex-direction: column;
       }
@@ -1400,6 +1468,9 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
       <span class="session-toolbar-label">会话主场</span>
       <p class="session-toolbar-id">会话编号：<code>${escapeHtml(sessionId)}</code></p>
     </div>
+    <div class="session-toolbar-actions">
+      <a id="sessionExportLink" class="button secondary" href="/api/sessions/${escapeHtml(sessionId)}/export.md">导出 Markdown</a>
+    </div>
     <p id="sessionTopicHeader" class="small session-topic-header">正在读取当前议题…</p>
   </section>
   <section class="session-shell">
@@ -1440,6 +1511,10 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
             </div>
             <div id="challengeFocusActions" class="choice-grid"></div>
           </div>
+          <div id="challengeChecklistPanel" class="challenge-checklist-panel">
+            <strong>本步过关条件</strong>
+            <div class="empty" style="margin-top:10px;">加载完成后，这里会显示这一轮必须补齐的输入门槛和切模条件。</div>
+          </div>
           <div class="challenge-current-round" id="challengeCurrentRound">
             <div class="challenge-round-header">
               <div>
@@ -1454,6 +1529,56 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
             </div>
           </div>
           <div id="challengeComposerFooter" class="challenge-composer-footer">
+            <div id="challengeProblemCorrectionForm" class="card" style="display:none;">
+              <div class="stack">
+                <div class="actions" style="justify-content:space-between;margin-top:0;">
+                  <strong>问题修正表单</strong>
+                  <button id="challengeProblemCorrectionAssist" type="button" class="secondary">智能整理</button>
+                </div>
+                <div class="stack">
+                  <div>
+                    <label for="challengeProblemDefinitionInput">问题定义</label>
+                    <input id="challengeProblemDefinitionInput" name="problemDefinition" type="text" placeholder="一句话写清真正被卡住的是什么，而不是你想做什么方案。" />
+                  </div>
+                  <div>
+                    <label for="challengeScenarioInput">场景/行业</label>
+                    <input id="challengeScenarioInput" name="scenario" type="text" placeholder="谁在什么情境里被这个问题卡住，例如团队类型、行业、协作环境。" />
+                  </div>
+                  <div data-list-field="topPains">
+                    <label>核心痛点</label>
+                    <div id="challengeProblemTopPainsList" class="stack">
+                      <div class="inline-form">
+                        <input name="topPains" type="text" placeholder="写一条高频、可感知、能说明损失的痛点。" />
+                        <button type="button" class="secondary" data-remove-list="topPains">删除</button>
+                      </div>
+                      <div class="inline-form">
+                        <input name="topPains" type="text" placeholder="写一条高频、可感知、能说明损失的痛点。" />
+                        <button type="button" class="secondary" data-remove-list="topPains">删除</button>
+                      </div>
+                      <div class="inline-form">
+                        <input name="topPains" type="text" placeholder="写一条高频、可感知、能说明损失的痛点。" />
+                        <button type="button" class="secondary" data-remove-list="topPains">删除</button>
+                      </div>
+                    </div>
+                    <div class="actions" style="margin-top:10px;"><button type="button" class="secondary" data-add-list="topPains">新增一条痛点</button></div>
+                  </div>
+                  <div data-list-field="constraints">
+                    <label>约束</label>
+                    <div id="challengeProblemConstraintsList" class="stack">
+                      <div class="inline-form">
+                        <input name="constraints" type="text" placeholder="写一条不能回避的时间、资源、组织或维护限制。" />
+                        <button type="button" class="secondary" data-remove-list="constraints">删除</button>
+                      </div>
+                    </div>
+                    <div class="actions" style="margin-top:10px;"><button type="button" class="secondary" data-add-list="constraints">新增一条约束</button></div>
+                  </div>
+                  <div>
+                    <label for="challengeProblemNotesInput">补充说明</label>
+                    <textarea id="challengeProblemNotesInput" name="notes" placeholder="可选：补充背景、例子或你暂时拿不准但不想丢掉的信息。"></textarea>
+                  </div>
+                </div>
+              </div>
+            </div>
             <form id="sessionMessageForm" class="stack">
             <input id="sessionMessageAction" name="action" type="hidden" value="" />
             <input id="sessionMessageFocusAction" name="focusAction" type="hidden" value="" />
@@ -1571,7 +1696,9 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
     const sessionPath = '/api/sessions/${escapeHtml(sessionId)}';
     const sessionModePath = '/api/sessions/${escapeHtml(sessionId)}/mode';
     const sessionMessagePath = '/api/sessions/${escapeHtml(sessionId)}/messages';
+    const sessionProblemCorrectionAssistPath = '/api/sessions/${escapeHtml(sessionId)}/challenge/problem-correction-assist';
     const sessionFinalizePath = '/api/sessions/${escapeHtml(sessionId)}/artifacts/finalize';
+    const sessionExportPath = '/api/sessions/${escapeHtml(sessionId)}/export.md';
     const debugLogs = [];
     let latestSessionData = null;
     let latestChallengeModel = null;
@@ -1586,6 +1713,22 @@ export const renderSessionPage = (sessionId: string) => layout('Session', `
         .replaceAll('>', '&gt;')
         .replaceAll('"', '&quot;')
         .replaceAll("'", '&#39;');
+    }
+
+    function syncExportLink() {
+      const exportLink = document.getElementById('sessionExportLink');
+      if (!exportLink) {
+        return;
+      }
+
+      const exportUrl = new URL(sessionExportPath, window.location.origin);
+      const currentQuery = new URLSearchParams(window.location.search);
+      const projectPath = currentQuery.get('projectPath');
+      if (projectPath) {
+        exportUrl.searchParams.set('projectPath', projectPath);
+      }
+
+      exportLink.href = exportUrl.pathname + exportUrl.search;
     }
 
 ${sessionLabelScript}
@@ -1666,13 +1809,17 @@ ${sessionLabelScript}
       }
 
       if (session.currentPhase === 'waiting_round_decision') {
+        const latestChallengeHandoff = session.latestChallengeHandoff || null;
+        const decisionReady = Boolean(latestChallengeHandoff && latestChallengeHandoff.roundStatus && latestChallengeHandoff.roundStatus.matureEnoughForDecision);
+        const requirementBuildReady = Boolean(latestChallengeHandoff && latestChallengeHandoff.roundStatus && latestChallengeHandoff.roundStatus.matureEnoughForRequirementBuild);
         if (session.currentMode === 'challenge' && completedChallengeRounds >= CLIENT_CHALLENGE_MAX_ROUNDS) {
           return {
             headline: session.requiredUserAction || CLIENT_CHALLENGE_MAX_ROUNDS_ERROR,
             primaryInputAction: null,
             primaryButtonLabel: null,
             explicitChoices: [
-              { label: '切到裁决模式', actionValue: 'switch:decision' },
+              ...(decisionReady ? [{ label: '切到裁决模式', actionValue: 'switch:decision' }] : []),
+              ...(requirementBuildReady ? [{ label: '进入需求共建', actionValue: 'switch:requirement-build' }] : []),
             ],
             showModeSwitcher: true,
           };
@@ -1684,7 +1831,8 @@ ${sessionLabelScript}
           primaryButtonLabel: null,
           explicitChoices: [
             { label: '进入下一轮追问', actionValue: 'round_resolution' },
-            { label: '切到裁决模式', actionValue: 'switch:decision' },
+            ...(decisionReady ? [{ label: '切到裁决模式', actionValue: 'switch:decision' }] : []),
+            ...(requirementBuildReady ? [{ label: '进入需求共建', actionValue: 'switch:requirement-build' }] : []),
           ],
           showModeSwitcher: true,
         };
@@ -2063,11 +2211,224 @@ ${sessionLabelScript}
       };
     }
 
+    function buildChallengeStep(currentPhase) {
+      if (currentPhase === 'topic_submitted' || currentPhase === 'architect_framing') {
+        return { current: 1, total: 6, label: '输入议题' };
+      }
+      if (currentPhase === 'waiting_user_problem_correction') {
+        return { current: 2, total: 6, label: '确认问题定义' };
+      }
+      if (currentPhase === 'objection_generation') {
+        return { current: 3, total: 6, label: '生成反方质疑' };
+      }
+      if (
+        currentPhase === 'waiting_user_objection_response'
+        || currentPhase === 'waiting_alternative_hypothesis_resolution'
+        || currentPhase === 'waiting_false_consensus_break'
+        || currentPhase === 'waiting_tech_escape_response'
+      ) {
+        return { current: 4, total: 6, label: '回应关键分歧' };
+      }
+      if (currentPhase === 'grounding') {
+        return { current: 5, total: 6, label: '收束本轮结论' };
+      }
+      return { current: 6, total: 6, label: '决定本轮去向' };
+    }
+
+    function buildChallengeChecklist(session) {
+      if (!session) {
+        return [];
+      }
+      if (session.currentPhase === 'waiting_user_problem_correction') {
+        return [
+          { id: 'problem_definition', label: '用一句话重写真正的问题定义', detail: '不能只停留在“想做工具”这种方案层表述。', done: false },
+          { id: 'scenario', label: '补清具体场景 / 团队 / 发生位置', detail: '至少说明谁在什么情境里被这个问题卡住。', done: false },
+          { id: 'top_pains', label: '补足 3 条用户痛点', detail: '至少写出三条高频、可感知的痛点。', done: false },
+          { id: 'constraints', label: '写出至少 1 条硬约束', detail: '例如时间、资源、协作成本或维护限制。', done: false },
+        ];
+      }
+      if (session.currentPhase === 'waiting_user_objection_response') {
+        return [
+          { id: 'response_path', label: '先选择一种回应路径', detail: '直接反驳、部分承认或给出反例，不能空手提交。', done: false },
+          { id: 'response_length', label: '回应至少 50 字', detail: '避免一句话跳过关键质疑。', done: false },
+          { id: 'core_objection', label: '正面处理刺客和用户幽灵的核心质疑', detail: '至少说清哪些成立、哪些不成立、还需验证什么。', done: false },
+        ];
+      }
+      if (session.currentPhase === 'waiting_alternative_hypothesis_resolution') {
+        return [
+          { id: 'response_path', label: '先选择替代假设处理路径', detail: '承认并降级、补反证，或标记待验证。', done: false },
+          { id: 'minimum_structure', label: '写清为什么它不能直接取代当前判断', detail: '不能只说“我不同意”。', done: false },
+        ];
+      }
+      if (session.currentPhase === 'waiting_false_consensus_break') {
+        return [
+          { id: 'response_path', label: '先选择伪共识拆解路径', detail: '指出未成立前提、命名分歧点，或要求继续追问。', done: false },
+          { id: 'premise_gap', label: '明确哪一个前提仍然没站住', detail: '不能只写“还没达成一致”。', done: false },
+        ];
+      }
+      if (session.currentPhase === 'waiting_tech_escape_response') {
+        return [
+          { id: 'response_path', label: '先选择回拉路径', detail: '回到业务目标、用户问题或执行约束。', done: false },
+          { id: 'real_world_anchor', label: '把讨论拉回真实问题', detail: '不能继续停留在抽象技术能力。', done: false },
+        ];
+      }
+      if (session.currentPhase === 'waiting_round_decision') {
+        const handoff = session.latestChallengeHandoff;
+        return [
+          {
+            id: 'problem_frame',
+            label: '问题定义已经收束',
+            detail: '这一轮至少要有一句被确认的问题定义。',
+            done: Boolean(handoff && handoff.problemFrame && handoff.problemFrame.oneSentenceProblem),
+          },
+          {
+            id: 'user_confirmed_context',
+            label: '用户确认上下文已补齐',
+            detail: '需要场景、3 条痛点和至少 1 条约束。',
+            done: Boolean(
+              handoff
+              && handoff.userConfirmedContext
+              && handoff.userConfirmedContext.scenario
+              && Array.isArray(handoff.userConfirmedContext.topPains)
+              && handoff.userConfirmedContext.topPains.length >= 3
+              && Array.isArray(handoff.userConfirmedContext.constraints)
+              && handoff.userConfirmedContext.constraints.length >= 1
+            ),
+          },
+          {
+            id: 'counter_hypothesis',
+            label: '最强反设和采用阻力已压实',
+            detail: '需要至少 1 条最强反设和 1 条采用阻力。',
+            done: Boolean(
+              handoff
+              && handoff.strongestCounterHypothesis
+              && Array.isArray(handoff.adoptionRisks)
+              && handoff.adoptionRisks.length >= 1
+            ),
+          },
+          {
+            id: 'next_validation_actions',
+            label: '下一步验证动作已明确',
+            detail: '至少要有 1 条可执行的验证动作。',
+            done: Boolean(handoff && Array.isArray(handoff.nextValidationActions) && handoff.nextValidationActions.length >= 1),
+          },
+        ];
+      }
+      return [
+        { id: 'continue', label: '继续补齐当前步骤信息', detail: '如果系统还没给出更具体门槛，继续围绕当前阶段补充内容。', done: false },
+      ];
+    }
+
+    function buildChallengeHandoffReadiness(session) {
+      const handoff = session && session.latestChallengeHandoff;
+      if (!handoff) {
+        return {
+          available: false,
+          decisionReady: false,
+          requirementBuildReady: false,
+          summary: '本轮 handoff 还没形成，暂时不要切到下游模式。',
+          openConflicts: [],
+          nextValidationActions: [],
+        };
+      }
+      const decisionReady = Boolean(handoff.roundStatus && handoff.roundStatus.matureEnoughForDecision);
+      const requirementBuildReady = Boolean(handoff.roundStatus && handoff.roundStatus.matureEnoughForRequirementBuild);
+      return {
+        available: true,
+        decisionReady,
+        requirementBuildReady,
+        summary: requirementBuildReady
+          ? '这一轮已具备直接进入需求共建的成熟度。'
+          : decisionReady
+            ? '这一轮已足够进入裁决模式，但仍不适合直接写需求草稿。'
+            : '这一轮还没形成完整 handoff，建议继续追问。',
+        openConflicts: Array.isArray(handoff.openConflicts) ? handoff.openConflicts : [],
+        nextValidationActions: Array.isArray(handoff.nextValidationActions) ? handoff.nextValidationActions : [],
+      };
+    }
+
+    function buildChallengeModeSwitchState(session) {
+      const readiness = buildChallengeHandoffReadiness(session);
+      const baseBlockedReason = session && session.currentPhase === 'waiting_round_decision'
+        ? ''
+        : '请先完成这一轮的收束，再决定是否切模式。';
+      const decisionReason = baseBlockedReason
+        || (!readiness.available
+          ? '本轮 handoff 还没生成完整，暂时不能进入裁决模式。'
+          : !readiness.decisionReady
+            ? '至少补齐问题定义、用户确认、最强反设和下一步验证动作后，才能进入裁决模式。'
+            : '可以把这一轮带去裁决模式继续做取舍。');
+      const requirementReason = baseBlockedReason
+        || (!readiness.available
+          ? '本轮 handoff 还没生成完整，暂时不能进入需求共建模式。'
+          : !readiness.decisionReady
+            ? '这一轮连裁决成熟度都还没到，先不要直接写需求草稿。'
+            : !readiness.requirementBuildReady
+              ? (
+                readiness.openConflicts.length > 0
+                  ? '仍有未决冲突：' + readiness.openConflicts.join('；')
+                  : '还缺 MVP 边界或排除项，暂时不要直接进入需求共建模式。'
+              )
+              : '这一轮已经可以直接承接到需求共建模式。');
+      return {
+        decision: {
+          enabled: Boolean(session && session.currentPhase === 'waiting_round_decision' && readiness.decisionReady),
+          reason: decisionReason,
+        },
+        'requirement-build': {
+          enabled: Boolean(session && session.currentPhase === 'waiting_round_decision' && readiness.requirementBuildReady),
+          reason: requirementReason,
+        },
+      };
+    }
+
+    function renderChallengeChecklist(model) {
+      if (!model) {
+        return '<div class="empty">加载完成后，这里会显示这一轮必须补齐的输入门槛和切模条件。</div>';
+      }
+
+      const checklist = Array.isArray(model.checklist) ? model.checklist : [];
+      const itemsHtml = checklist.length === 0
+        ? '<div class="empty">当前阶段还没有额外的 checklist 约束。</div>'
+        : '<div class="challenge-checklist-list">' + checklist.map((item) => (
+          '<div class="challenge-checklist-item ' + (item.done ? 'done' : 'pending') + '">' +
+            '<div><span class="challenge-checklist-status">' + (item.done ? '已满足' : '待补齐') + '</span><strong>' + escapeHtml(item.label) + '</strong></div>' +
+            (item.detail ? '<div class="challenge-checklist-detail">' + escapeHtml(item.detail) + '</div>' : '') +
+          '</div>'
+        )).join('') + '</div>';
+
+      const gates = model.modeSwitchState || buildChallengeModeSwitchState(null);
+      const readiness = model.handoffReadiness || buildChallengeHandoffReadiness(null);
+      const gateHtml = '<div class="challenge-mode-gate-list">' + [
+        { mode: 'decision', label: '裁决模式', state: gates.decision },
+        { mode: 'requirement-build', label: '需求共建模式', state: gates['requirement-build'] },
+      ].map((entry) => (
+        '<div class="challenge-mode-gate-item ' + (entry.state && entry.state.enabled ? 'enabled' : 'blocked') + '">' +
+          '<strong>' + entry.label + '</strong>' +
+          '<div class="challenge-checklist-detail">' + escapeHtml(entry.state && entry.state.reason ? entry.state.reason : '当前没有额外说明。') + '</div>' +
+        '</div>'
+      )).join('') + '</div>';
+
+      const handoffSummary = '<div class="challenge-handoff-summary">' +
+        '<strong>handoff 状态</strong>' +
+        '<div class="challenge-checklist-detail">' + escapeHtml(readiness.summary || '本轮 handoff 还没形成。') + '</div>' +
+        (readiness.openConflicts && readiness.openConflicts.length > 0
+          ? '<div class="challenge-checklist-detail">未决冲突：' + escapeHtml(readiness.openConflicts.join('；')) + '</div>'
+          : '') +
+        (readiness.nextValidationActions && readiness.nextValidationActions.length > 0
+          ? '<div class="challenge-checklist-detail">下一步验证动作：' + escapeHtml(readiness.nextValidationActions.join('；')) + '</div>'
+          : '') +
+      '</div>';
+
+      return '<strong>本步过关条件</strong>' + itemsHtml + handoffSummary + gateHtml;
+    }
+
     function buildClientChallengeWorkbenchModel(session, modeState) {
       const messages = modeState && Array.isArray(modeState.messages) ? modeState.messages : [];
       const rounds = buildChallengeRounds(messages);
       const hasExistingRounds = rounds.some((round) => Array.isArray(round) && round.length > 0);
       const completedRoundCount = countCompletedChallengeRounds(rounds);
+      const step = buildChallengeStep(session && session.currentPhase);
       const useClosedRound = [
         'waiting_round_decision',
         'waiting_alternative_hypothesis_resolution',
@@ -2113,6 +2474,9 @@ ${sessionLabelScript}
         .map((item) => item.roleName + '：' + summarizeChallengeText(item.content, 88))
         .slice(0, 3);
       const focusCard = buildClientChallengeFocusCard(session, currentItems, hasExistingRounds, completedRoundCount);
+      const checklist = buildChallengeChecklist(session);
+      const handoffReadiness = buildChallengeHandoffReadiness(session);
+      const modeSwitchState = buildChallengeModeSwitchState(session);
       const currentRound = {
         title: '当前轮上下文',
         summary: summarizeChallengeRound(currentItems),
@@ -2121,10 +2485,14 @@ ${sessionLabelScript}
 
       return {
         layoutMode: session && session.currentPhase === 'topic_submitted' && !hasExistingRounds ? 'topic-intake' : 'standard',
+        step,
         currentRound,
         currentContext: currentRound,
         historyGroups,
         focusCard,
+        checklist,
+        handoffReadiness,
+        modeSwitchState,
         topicBrief: {
           topic: session && session.topic ? session.topic : '当前议题尚未命名',
           currentFraming: latestArchitectMessage ? summarizeChallengeText(latestArchitectMessage.content, 140) : '架构师问题定义还没生成。',
@@ -2219,11 +2587,14 @@ ${sessionLabelScript}
       )).join('') + '</div>';
     }
 
-    function renderChallengeStatusStrip(session, taskModel) {
+    function renderChallengeStatusStrip(session, taskModel, model) {
       const parts = [
+        model && model.step
+          ? '<span class="challenge-status-pill">步骤：第 ' + escapeHtml(model.step.current) + ' / ' + escapeHtml(model.step.total) + ' 步 · ' + escapeHtml(model.step.label) + '</span>'
+          : '',
         '<span class="challenge-status-pill">阶段：' + escapeHtml(formatSessionPhaseLabel(session.currentPhase) || session.currentPhase || '') + '</span>',
         '<span class="challenge-status-pill">交互：' + escapeHtml(interactionStateLabel(session.interactionState)) + '</span>',
-      ];
+      ].filter(Boolean);
 
       if (taskModel && taskModel.headline) {
         parts.push('<span class="challenge-status-pill">下一步：' + escapeHtml(taskModel.headline) + '</span>');
@@ -2257,6 +2628,229 @@ ${sessionLabelScript}
       }
     }
 
+    function problemCorrectionListConfig(fieldName) {
+      if (fieldName === 'topPains') {
+        return {
+          minItems: 3,
+          placeholder: '写一条高频、可感知、能说明损失的痛点。',
+          addLabel: '新增一条痛点',
+        };
+      }
+      return {
+        minItems: 1,
+        placeholder: '写一条不能回避的时间、资源、组织或维护限制。',
+        addLabel: '新增一条约束',
+      };
+    }
+
+    function renderProblemCorrectionListRowHtml(fieldName, placeholder, value) {
+      return ''
+        + '<div class="inline-form">'
+        + '<input name="' + escapeHtml(fieldName) + '" type="text" placeholder="' + escapeHtml(placeholder) + '" value="' + escapeHtml(value || '') + '" />'
+        + '<button type="button" class="secondary" data-remove-list="' + escapeHtml(fieldName) + '">删除</button>'
+        + '</div>';
+    }
+
+    function getProblemCorrectionListRoot(fieldName) {
+      if (fieldName === 'topPains') {
+        return document.getElementById('challengeProblemTopPainsList');
+      }
+      if (fieldName === 'constraints') {
+        return document.getElementById('challengeProblemConstraintsList');
+      }
+      return null;
+    }
+
+    function syncProblemCorrectionListControls(fieldName) {
+      const root = getProblemCorrectionListRoot(fieldName);
+      const config = problemCorrectionListConfig(fieldName);
+      if (!root) {
+        return;
+      }
+      const rows = Array.from(root.querySelectorAll('[data-remove-list="' + fieldName + '"]'));
+      const canRemove = rows.length > config.minItems;
+      for (const button of rows) {
+        button.disabled = !canRemove;
+        button.style.visibility = canRemove ? '' : 'hidden';
+      }
+    }
+
+    function addProblemCorrectionListItem(fieldName, value) {
+      const root = getProblemCorrectionListRoot(fieldName);
+      if (!root) {
+        return;
+      }
+      const config = problemCorrectionListConfig(fieldName);
+      root.insertAdjacentHTML('beforeend', renderProblemCorrectionListRowHtml(fieldName, config.placeholder, value || ''));
+      syncProblemCorrectionListControls(fieldName);
+    }
+
+    function readProblemCorrectionList(fieldName) {
+      const root = getProblemCorrectionListRoot(fieldName);
+      if (!root) {
+        return [];
+      }
+      return Array.from(root.querySelectorAll('input[name="' + fieldName + '"]'))
+        .map((input) => String(input.value || '').trim())
+        .filter(Boolean);
+    }
+
+    function readProblemCorrectionDraftFromForm() {
+      const problemDefinitionInput = document.getElementById('challengeProblemDefinitionInput');
+      const scenarioInput = document.getElementById('challengeScenarioInput');
+      const notesInput = document.getElementById('challengeProblemNotesInput');
+      return {
+        problemDefinition: String(problemDefinitionInput && problemDefinitionInput.value || '').trim(),
+        scenario: String(scenarioInput && scenarioInput.value || '').trim(),
+        topPains: readProblemCorrectionList('topPains'),
+        constraints: readProblemCorrectionList('constraints'),
+        notes: String(notesInput && notesInput.value || '').trim(),
+      };
+    }
+
+    function serializeChallengeProblemCorrectionForm(draft) {
+      const lines = [
+        '问题定义：' + String(draft.problemDefinition || '').trim(),
+        '场景：' + String(draft.scenario || '').trim(),
+        '核心痛点：',
+        ...((draft.topPains || []).map((item) => String(item || '').trim()).filter(Boolean).map((item) => '- ' + item)),
+        '约束：',
+        ...((draft.constraints || []).map((item) => String(item || '').trim()).filter(Boolean).map((item) => '- ' + item)),
+      ];
+
+      const notes = String(draft.notes || '').trim();
+      if (notes) {
+        lines.push('补充说明：', notes);
+      }
+      return lines.join('\n');
+    }
+
+    function buildProblemCorrectionChecklistFromDraft(draft) {
+      return [
+        {
+          id: 'problem_definition',
+          label: '问题定义',
+          detail: '用一句话写清真正被卡住的是什么，而不是你想做什么方案。',
+          done: String(draft.problemDefinition || '').trim().length >= 12,
+        },
+        {
+          id: 'scenario',
+          label: '场景/行业',
+          detail: '写清谁在什么情境里被这个问题卡住。',
+          done: String(draft.scenario || '').trim().length >= 6,
+        },
+        {
+          id: 'top_pains',
+          label: '至少 3 条核心痛点',
+          detail: '每条都应该是高频、可感知、能说明损失的痛点。',
+          done: Array.isArray(draft.topPains) && draft.topPains.length >= 3,
+        },
+        {
+          id: 'constraints',
+          label: '至少 1 条约束',
+          detail: '写出时间、资源、组织或维护上的硬限制。',
+          done: Array.isArray(draft.constraints) && draft.constraints.length >= 1,
+        },
+      ];
+    }
+
+    function renderProblemCorrectionChecklistFromDraft(draft, model) {
+      const checklist = buildProblemCorrectionChecklistFromDraft(draft);
+      const itemsHtml = '<div class="challenge-checklist-list">' + checklist.map((item) => (
+        '<div class="challenge-checklist-item ' + (item.done ? 'done' : 'pending') + '">' +
+          '<div><span class="challenge-checklist-status">' + (item.done ? '已满足' : '待补齐') + '</span><strong>' + escapeHtml(item.label) + '</strong></div>' +
+          '<div class="challenge-checklist-detail">' + escapeHtml(item.detail) + '</div>' +
+        '</div>'
+      )).join('') + '</div>';
+
+      const gates = model && model.modeSwitchState ? model.modeSwitchState : buildChallengeModeSwitchState(null);
+      const readiness = model && model.handoffReadiness ? model.handoffReadiness : buildChallengeHandoffReadiness(null);
+      const gateHtml = '<div class="challenge-mode-gate-list">' + [
+        { label: '裁决模式', state: gates.decision },
+        { label: '需求共建模式', state: gates['requirement-build'] },
+      ].map((entry) => (
+        '<div class="challenge-mode-gate-item ' + (entry.state && entry.state.enabled ? 'enabled' : 'blocked') + '">' +
+          '<strong>' + entry.label + '</strong>' +
+          '<div class="challenge-checklist-detail">' + escapeHtml(entry.state && entry.state.reason ? entry.state.reason : '当前没有额外说明。') + '</div>' +
+        '</div>'
+      )).join('') + '</div>';
+
+      return '<strong>本步过关条件</strong>' + itemsHtml
+        + '<div class="challenge-handoff-summary"><strong>handoff 状态</strong><div class="challenge-checklist-detail">'
+        + escapeHtml(readiness.summary || '本轮 handoff 还没形成。')
+        + '</div></div>'
+        + gateHtml;
+    }
+
+    function syncChallengeProblemCorrectionForm(session, model) {
+      const formShell = document.getElementById('challengeProblemCorrectionForm');
+      const inputWrap = document.getElementById('sessionMessageInputWrap');
+      const composerInput = document.getElementById('sessionMessageInput');
+      const checklistPanel = document.getElementById('challengeChecklistPanel');
+      const enabled = Boolean(
+        session
+        && session.currentMode === 'challenge'
+        && session.currentPhase === 'waiting_user_problem_correction'
+      );
+
+      if (formShell) {
+        formShell.style.display = enabled ? '' : 'none';
+      }
+      if (inputWrap && enabled) {
+        inputWrap.style.display = 'none';
+      }
+      if (composerInput) {
+        composerInput.required = !enabled;
+        composerInput.disabled = enabled;
+      }
+
+      syncProblemCorrectionListControls('topPains');
+      syncProblemCorrectionListControls('constraints');
+
+      if (enabled && checklistPanel) {
+        checklistPanel.innerHTML = renderProblemCorrectionChecklistFromDraft(readProblemCorrectionDraftFromForm(), model);
+      }
+    }
+
+    function applyProblemCorrectionSuggestion(suggestion) {
+      const problemDefinitionInput = document.getElementById('challengeProblemDefinitionInput');
+      const scenarioInput = document.getElementById('challengeScenarioInput');
+      const notesInput = document.getElementById('challengeProblemNotesInput');
+      const topPainsRoot = getProblemCorrectionListRoot('topPains');
+      const constraintsRoot = getProblemCorrectionListRoot('constraints');
+      if (problemDefinitionInput && suggestion.problemDefinition) {
+        problemDefinitionInput.value = suggestion.problemDefinition;
+      }
+      if (scenarioInput && suggestion.scenario) {
+        scenarioInput.value = suggestion.scenario;
+      }
+      if (notesInput && suggestion.notes) {
+        notesInput.value = suggestion.notes;
+      }
+      if (topPainsRoot) {
+        const values = Array.isArray(suggestion.topPains) && suggestion.topPains.length > 0
+          ? suggestion.topPains
+          : ['', '', ''];
+        topPainsRoot.innerHTML = values.map((value) => renderProblemCorrectionListRowHtml(
+          'topPains',
+          problemCorrectionListConfig('topPains').placeholder,
+          value,
+        )).join('');
+      }
+      if (constraintsRoot) {
+        const values = Array.isArray(suggestion.constraints) && suggestion.constraints.length > 0
+          ? suggestion.constraints
+          : [''];
+        constraintsRoot.innerHTML = values.map((value) => renderProblemCorrectionListRowHtml(
+          'constraints',
+          problemCorrectionListConfig('constraints').placeholder,
+          value,
+        )).join('');
+      }
+      syncProblemCorrectionListControls('topPains');
+      syncProblemCorrectionListControls('constraints');
+    }
+
     function validateChallengeComposerInput(session, action, content, focusAction) {
       if (!session || session.currentMode !== 'challenge') {
         return '';
@@ -2265,6 +2859,14 @@ ${sessionLabelScript}
       const trimmed = String(content || '').trim();
       if (action === 'objection_response' && trimmed.length < CLIENT_CHALLENGE_MIN_RESPONSE_LENGTH) {
         return CLIENT_CHALLENGE_MIN_RESPONSE_ERROR;
+      }
+
+      if (
+        action === 'objection_response'
+        && session.currentPhase === 'waiting_user_objection_response'
+        && !String(focusAction || '').trim()
+      ) {
+        return '当前阶段必须先选择一种回应路径，再提交回应。';
       }
 
       if (CLIENT_CHALLENGE_INTERRUPT_PHASES.has(session.currentPhase || '') && !String(focusAction || '').trim()) {
@@ -2318,6 +2920,7 @@ ${sessionLabelScript}
       const focusTitle = document.getElementById('challengeFocusTitle');
       const focusReason = document.getElementById('challengeFocusReason');
       const focusActions = document.getElementById('challengeFocusActions');
+      const checklistPanel = document.getElementById('challengeChecklistPanel');
       const inlineTopic = document.getElementById('challengeInlineTopic');
       const topicHeader = document.getElementById('sessionTopicHeader');
       const topicAnchorPanel = document.getElementById('challengeTopicAnchorPanel');
@@ -2359,6 +2962,9 @@ ${sessionLabelScript}
         if (focusActions) {
           focusActions.innerHTML = '';
         }
+        if (checklistPanel) {
+          checklistPanel.innerHTML = '<strong>本步过关条件</strong><div class="empty" style="margin-top:10px;">加载完成后，这里会显示这一轮必须补齐的输入门槛和切模条件。</div>';
+        }
         if (focusTitle) {
           focusTitle.textContent = taskModel.headline || '继续推进';
         }
@@ -2391,13 +2997,14 @@ ${sessionLabelScript}
         }
         syncChallengeFocusSelection('');
         setChallengeContextExpanded(false);
+        syncChallengeProblemCorrectionForm(null, null);
         return;
       }
 
       latestChallengeModel = model;
       if (statusStrip) {
         statusStrip.className = 'challenge-status-strip';
-        statusStrip.innerHTML = renderChallengeStatusStrip(data.session, taskModel);
+        statusStrip.innerHTML = renderChallengeStatusStrip(data.session, taskModel, model);
       }
       if (focusTitle) {
         focusTitle.textContent = model.focusCard.title;
@@ -2414,6 +3021,10 @@ ${sessionLabelScript}
       if (focusActions) {
         focusActions.innerHTML = renderChallengeFocusActions(model.focusCard.actions);
       }
+      if (checklistPanel) {
+        checklistPanel.innerHTML = renderChallengeChecklist(model);
+      }
+      syncChallengeProblemCorrectionForm(data.session, model);
       syncChallengeFocusSelection('');
       if (inlineTopic) {
         inlineTopic.innerHTML = '<strong>当前议题</strong><span class="challenge-topic-headline">' + escapeHtml(model.topicBrief.topic) + '</span>';
@@ -2425,7 +3036,7 @@ ${sessionLabelScript}
         currentRoundHeadline.textContent = model.currentRound.title;
       }
       if (currentRoundHint) {
-        currentRoundHint.textContent = '默认只看摘要；如果你需要完整上下文，再展开。';
+        currentRoundHint.textContent = '默认只看摘要；如果你需要完整上下文，再展开。当前是第 ' + model.step.current + ' / ' + model.step.total + ' 步。';
       }
       if (currentRoundSummary) {
         currentRoundSummary.innerHTML = model.currentRound.summary
@@ -2475,7 +3086,11 @@ ${sessionLabelScript}
       }
       if (modeSwitcherHint) {
         modeSwitcherHint.textContent = taskModel.showModeSwitcher
-          ? '如果要切模式，先看清当前轮已经站住什么。'
+          ? (
+            model.modeSwitchState && model.modeSwitchState['requirement-build'] && model.modeSwitchState['requirement-build'].enabled
+              ? '本轮 handoff 已足够承接到下游模式。'
+              : (model.modeSwitchState && model.modeSwitchState.decision ? model.modeSwitchState.decision.reason : '如果要切模式，先看清当前轮已经站住什么。')
+          )
           : '当前流程还没收束，先处理完这一轮的关键动作。';
       }
       setChallengeContextExpanded(false);
@@ -2671,10 +3286,23 @@ ${sessionLabelScript}
         (message ? '<p class="small">' + escapeHtml(message) + '</p>' : '');
     }
 
-    function renderModePills(currentMode, disabled) {
+    function renderModePills(currentMode, disabled, challengeModeSwitchState) {
       for (const button of document.querySelectorAll('[data-mode]')) {
-        button.classList.toggle('active', button.dataset.mode === currentMode);
-        button.disabled = disabled;
+        const targetMode = button.dataset.mode || '';
+        const gate = currentMode === 'challenge' && challengeModeSwitchState
+          ? challengeModeSwitchState[targetMode]
+          : null;
+        const gateDisabled = Boolean(
+          targetMode
+          && targetMode !== currentMode
+          && gate
+          && gate.enabled === false
+        );
+        const blockedReason = gateDisabled && gate && gate.reason ? gate.reason : '';
+        button.classList.toggle('active', targetMode === currentMode);
+        button.disabled = disabled || gateDisabled;
+        button.setAttribute('data-mode-blocked-reason', blockedReason);
+        button.title = blockedReason;
       }
     }
 
@@ -2790,7 +3418,13 @@ ${sessionLabelScript}
     function applySessionData(data, options) {
       const disabled = Boolean(options && options.disabled);
       latestSessionData = data;
-      renderModePills(data.session.currentMode, disabled);
+      renderModePills(
+        data.session.currentMode,
+        disabled,
+        data.session && data.session.currentMode === 'challenge'
+          ? buildChallengeModeSwitchState(data.session)
+          : null,
+      );
       if (data && data.session) {
         data.session.status = formatSessionStatusLabel(data.session.status);
       }
@@ -3099,9 +3733,25 @@ ${sessionLabelScript}
       const rawAction = document.getElementById('sessionMessageAction').value.trim();
       const focusActionInput = document.getElementById('sessionMessageFocusAction');
       const focusAction = focusActionInput ? focusActionInput.value.trim() : '';
-      const content = input.value.trim();
       const session = latestSessionData && latestSessionData.session ? latestSessionData.session : null;
       const action = resolveClientChallengeAction(session, rawAction);
+      const useProblemCorrectionForm = Boolean(
+        session
+        && session.currentMode === 'challenge'
+        && session.currentPhase === 'waiting_user_problem_correction'
+      );
+      let content = input.value.trim();
+      if (useProblemCorrectionForm) {
+        const draft = readProblemCorrectionDraftFromForm();
+        const checklist = buildProblemCorrectionChecklistFromDraft(draft);
+        const missing = checklist.filter((item) => !item.done).map((item) => item.label);
+        if (missing.length > 0) {
+          setInlineMessage('sessionComposerError', '当前这一步还缺这些内容：' + missing.join('、') + '。');
+          syncChallengeProblemCorrectionForm(session, latestChallengeModel);
+          return;
+        }
+        content = serializeChallengeProblemCorrectionForm(draft);
+      }
       if (!content) {
         setInlineMessage('sessionComposerError', '请输入本轮要推进的内容。');
         return;
@@ -3131,6 +3781,27 @@ ${sessionLabelScript}
           },
         );
         form.reset();
+        if (useProblemCorrectionForm) {
+          const notesInput = document.getElementById('challengeProblemNotesInput');
+          const problemDefinitionInput = document.getElementById('challengeProblemDefinitionInput');
+          const scenarioInput = document.getElementById('challengeScenarioInput');
+          if (problemDefinitionInput) problemDefinitionInput.value = '';
+          if (scenarioInput) scenarioInput.value = '';
+          if (notesInput) notesInput.value = '';
+          const topPainsRoot = getProblemCorrectionListRoot('topPains');
+          const constraintsRoot = getProblemCorrectionListRoot('constraints');
+          if (topPainsRoot) {
+            topPainsRoot.innerHTML = [
+              renderProblemCorrectionListRowHtml('topPains', problemCorrectionListConfig('topPains').placeholder, ''),
+              renderProblemCorrectionListRowHtml('topPains', problemCorrectionListConfig('topPains').placeholder, ''),
+              renderProblemCorrectionListRowHtml('topPains', problemCorrectionListConfig('topPains').placeholder, ''),
+            ].join('');
+          }
+          if (constraintsRoot) {
+            constraintsRoot.innerHTML = renderProblemCorrectionListRowHtml('constraints', problemCorrectionListConfig('constraints').placeholder, '');
+          }
+          syncChallengeProblemCorrectionForm(data.session, latestChallengeModel);
+        }
         syncChallengeFocusSelection('');
         document.getElementById('sessionMessageAction').value = data && data.session
           ? buildClientSessionTaskModel(data.session, data.artifacts || {}, data.modeState || null).primaryInputAction || ''
@@ -3211,17 +3882,94 @@ ${sessionLabelScript}
       const input = document.getElementById('sessionMessageInput');
       const label = document.getElementById('sessionComposerLabel');
       const focusActionInput = document.getElementById('sessionMessageFocusAction');
+      const problemForm = document.getElementById('challengeProblemCorrectionForm');
+      const notesInput = document.getElementById('challengeProblemNotesInput');
       if (focusActionInput) {
         focusActionInput.value = target.dataset.focusAction || '';
       }
       syncChallengeFocusSelection(target.dataset.focusAction || '');
-      input.value = target.dataset.focusActionTemplate || '';
-      if (label) {
-        label.textContent = target.dataset.focusInputLabel || label.textContent;
+      if (problemForm && problemForm.style.display !== 'none' && notesInput) {
+        notesInput.value = target.dataset.focusActionTemplate || '';
+        notesInput.focus();
+      } else {
+        input.value = target.dataset.focusActionTemplate || '';
+        if (label) {
+          label.textContent = target.dataset.focusInputLabel || label.textContent;
+        }
+        input.placeholder = target.dataset.focusPlaceholder || input.placeholder;
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
       }
-      input.placeholder = target.dataset.focusPlaceholder || input.placeholder;
-      input.focus();
-      input.setSelectionRange(input.value.length, input.value.length);
+    });
+    document.getElementById('challengeProblemCorrectionForm').addEventListener('input', () => {
+      const session = latestSessionData && latestSessionData.session ? latestSessionData.session : null;
+      setInlineMessage('sessionComposerError', '');
+      syncChallengeProblemCorrectionForm(session, latestChallengeModel);
+    });
+    document.getElementById('challengeProblemCorrectionForm').addEventListener('click', (event) => {
+      const addTarget = event.target.closest('[data-add-list]');
+      if (addTarget) {
+        addProblemCorrectionListItem(addTarget.dataset.addList || '');
+        const session = latestSessionData && latestSessionData.session ? latestSessionData.session : null;
+        syncChallengeProblemCorrectionForm(session, latestChallengeModel);
+        return;
+      }
+
+      const removeTarget = event.target.closest('[data-remove-list]');
+      if (!removeTarget) {
+        return;
+      }
+      const fieldName = removeTarget.dataset.removeList || '';
+      const config = problemCorrectionListConfig(fieldName);
+      const root = getProblemCorrectionListRoot(fieldName);
+      if (!root) {
+        return;
+      }
+      const rows = root.querySelectorAll('[data-remove-list="' + fieldName + '"]');
+      if (rows.length <= config.minItems) {
+        return;
+      }
+      const row = removeTarget.closest('.inline-form');
+      if (row) {
+        row.remove();
+      }
+      syncProblemCorrectionListControls(fieldName);
+      const session = latestSessionData && latestSessionData.session ? latestSessionData.session : null;
+      syncChallengeProblemCorrectionForm(session, latestChallengeModel);
+    });
+    document.getElementById('challengeProblemCorrectionAssist').addEventListener('click', async () => {
+      const session = latestSessionData && latestSessionData.session ? latestSessionData.session : null;
+      if (!session || session.currentMode !== 'challenge' || session.currentPhase !== 'waiting_user_problem_correction') {
+        return;
+      }
+      const draft = readProblemCorrectionDraftFromForm();
+      const content = serializeChallengeProblemCorrectionForm(draft);
+      setInlineMessage('sessionComposerError', '');
+      setStatusBanner('', '正在整理问题修正表单…', '系统会把你当前填写的内容拆成更清晰的字段建议。');
+      appendDebugLog('request', 'POST ' + sessionProblemCorrectionAssistPath, { content });
+
+      try {
+        const response = await fetch(sessionProblemCorrectionAssistPath, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content }),
+        });
+        const data = await readJson(response);
+        appendDebugLog('response', response.status + ' POST ' + sessionProblemCorrectionAssistPath, data);
+        if (!response.ok) {
+          throw new Error(data.error || '无法整理问题修正表单');
+        }
+        applyProblemCorrectionSuggestion(data.suggestion || {});
+        syncChallengeProblemCorrectionForm(session, latestChallengeModel);
+        const reminders = Array.isArray(data.reminders) && data.reminders.length > 0
+          ? '建议：' + data.reminders.join('；')
+          : '表单字段已经帮你整理好了，可以直接再检查一遍后提交。';
+        setStatusBanner('success', '问题修正已整理', reminders);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '无法整理问题修正表单';
+        setInlineMessage('sessionComposerError', message);
+        setStatusBanner('danger', '智能整理失败', message);
+      }
     });
     document.getElementById('challengeRoundSummaryToggle').addEventListener('click', () => {
       setChallengeContextExpanded(!challengeContextExpanded);
@@ -3243,6 +3991,7 @@ ${sessionLabelScript}
     document.getElementById('finalizeArtifactsForm').addEventListener('submit', finalizeArtifacts);
     appendDebugLog('init', 'session page script loaded', sessionPath);
     renderDebugLogs();
+    syncExportLink();
     loadSession();
   </script>
 `);

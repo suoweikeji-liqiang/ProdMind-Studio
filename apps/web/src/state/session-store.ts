@@ -1,5 +1,6 @@
 import { createSessionStore } from '@prodmind/asset-engine';
 import type {
+  ChallengeHandoff,
   ConversationEvent,
   ConversationMode,
   ConversationSession,
@@ -203,6 +204,32 @@ export async function switchLiveSessionMode(projectPath: string, sessionId: stri
   await persistence.saveSession(projectPath, updatedSession);
   await persistence.saveModeState(projectPath, sessionId, nextModeState);
   await persistence.appendEvent(projectPath, event);
+  liveSessions.set(sessionId, existing);
+  return existing;
+}
+
+export async function replaceLatestChallengeHandoff(
+  projectPath: string,
+  sessionId: string,
+  handoff: ChallengeHandoff
+): Promise<LiveSessionState | null> {
+  const existing = await getLiveSession(projectPath, sessionId);
+  if (!existing) {
+    return null;
+  }
+
+  const timestamp = nowIso();
+  const updatedSession: ConversationSession = {
+    ...existing.session,
+    latestChallengeHandoff: handoff,
+    updatedAt: timestamp,
+    lastActiveAt: timestamp,
+  };
+
+  existing.session = updatedSession;
+
+  await persistence.saveSession(projectPath, updatedSession);
+
   liveSessions.set(sessionId, existing);
   return existing;
 }

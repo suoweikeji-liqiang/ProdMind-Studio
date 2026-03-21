@@ -23,6 +23,57 @@ export const SharedContextSchema = z.object({
 });
 export type SharedContext = z.infer<typeof SharedContextSchema>;
 
+export const ChallengeProblemFrameSchema = z.object({
+  oneSentenceProblem: z.string(),
+  boundaries: z.array(z.string()).default([]),
+  keyVariables: z.array(z.string()).default([]),
+});
+export type ChallengeProblemFrame = z.infer<typeof ChallengeProblemFrameSchema>;
+
+export const ChallengeUserConfirmedContextSchema = z.object({
+  scenario: z.string(),
+  topPains: z.array(z.string()).default([]),
+  constraints: z.array(z.string()).default([]),
+});
+export type ChallengeUserConfirmedContext = z.infer<typeof ChallengeUserConfirmedContextSchema>;
+
+export const ChallengeMvpScopeSchema = z.object({
+  include: z.array(z.string()).default([]),
+  exclude: z.array(z.string()).default([]),
+  oneWeekScope: z.array(z.string()).default([]),
+});
+export type ChallengeMvpScope = z.infer<typeof ChallengeMvpScopeSchema>;
+
+export const ChallengeEvidenceTraceSchema = z.object({
+  architectMessageId: z.string().optional(),
+  assassinMessageId: z.string().optional(),
+  userGhostMessageId: z.string().optional(),
+  userResponseMessageId: z.string().optional(),
+  grounderMessageId: z.string().optional(),
+});
+export type ChallengeEvidenceTrace = z.infer<typeof ChallengeEvidenceTraceSchema>;
+
+export const ChallengeRoundStatusSchema = z.object({
+  matureEnoughForDecision: z.boolean(),
+  matureEnoughForRequirementBuild: z.boolean(),
+});
+export type ChallengeRoundStatus = z.infer<typeof ChallengeRoundStatusSchema>;
+
+export const ChallengeHandoffSchema = z.object({
+  roundIndex: z.number().int().positive(),
+  topic: z.string(),
+  problemFrame: ChallengeProblemFrameSchema,
+  userConfirmedContext: ChallengeUserConfirmedContextSchema,
+  strongestCounterHypothesis: z.string(),
+  adoptionRisks: z.array(z.string()).default([]),
+  mvpScope: ChallengeMvpScopeSchema,
+  openConflicts: z.array(z.string()).default([]),
+  nextValidationActions: z.array(z.string()).default([]),
+  evidenceTrace: ChallengeEvidenceTraceSchema.default({}),
+  roundStatus: ChallengeRoundStatusSchema,
+});
+export type ChallengeHandoff = z.infer<typeof ChallengeHandoffSchema>;
+
 export const RoleIdentitySchema = z.object({
   roleId: z.string(),
   roleName: z.string(),
@@ -144,6 +195,7 @@ export const ConversationSessionSchema = z.object({
   requiredUserAction: z.string().default('请输入你的议题或想法'),
   lastCompletedStep: z.string().optional(),
   nextRecommendedMode: ConversationModeSchema.optional(),
+  latestChallengeHandoff: ChallengeHandoffSchema.optional(),
   sharedContext: SharedContextSchema.default({}),
   createdAt: z.string(),
   updatedAt: z.string(),

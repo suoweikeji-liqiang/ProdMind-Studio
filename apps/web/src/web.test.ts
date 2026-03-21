@@ -39,6 +39,17 @@ async function readJson<T>(response: { json(): Promise<unknown> }): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+function buildChallengeProblemCorrection(problem = '团队缺少统一的需求收敛入口，导致判断依据和优先级持续漂移。'): string {
+  return [
+    `问题定义：${problem}`,
+    '场景：一个 10 人左右的产品研发团队，每周都会收到来自销售、运营和老板的临时需求。',
+    '痛点1：需求散落在聊天、文档和会议里，后续很难回看。',
+    '痛点2：谁拍板、为什么拍板经常不透明，导致执行反复返工。',
+    '痛点3：没有统一的优先级判断方式，临时需求经常挤占主线。',
+    '约束：必须在两周内验证价值，不能要求团队先做复杂流程改造。',
+  ].join('\n');
+}
+
 describe('Web Happy Path', () => {
   it('legacy compatibility: workflow router is still present for pre-migration clients', async () => {
     const { workflowRouter } = await import('../src/routes/workflow.js');
@@ -91,9 +102,11 @@ describe('Web Happy Path', () => {
     expect(sessionHtml).toContain('id="debugLogList"');
     expect(sessionHtml).toContain('id="sharedContextPanel"');
     expect(sessionHtml).toContain('id="finalizeArtifactsButton"');
+    expect(sessionHtml).toContain('id="sessionExportLink"');
     expect(sessionHtml).toContain('/api/sessions/session-42/messages');
     expect(sessionHtml).toContain('/api/sessions/session-42/mode');
     expect(sessionHtml).toContain('/api/sessions/session-42/artifacts/finalize');
+    expect(sessionHtml).toContain('/api/sessions/session-42/export.md');
     expect(sessionHtml).toContain("document.getElementById('sessionSendButton').disabled = disabled;");
     expect(sessionHtml).toContain("window.addEventListener('error'");
     expect(sessionHtml).toContain("window.addEventListener('unhandledrejection'");
@@ -487,7 +500,11 @@ describe('Web Session API', () => {
         const step2 = await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: '闂瀹氫箟鐪嬭捣鏉ュ悎鐞嗐€?', action: 'problem_correction', projectPath: testSessionsDir }),
+          body: JSON.stringify({
+            content: buildChallengeProblemCorrection('团队没有统一的决策判断框架，导致需求优先级持续飘移。'),
+            action: 'problem_correction',
+            projectPath: testSessionsDir,
+          }),
         });
         const r1s2 = await readJson<any>(step2);
         expect(r1s2.session.currentPhase).toBe('waiting_user_objection_response');
@@ -500,6 +517,7 @@ describe('Web Session API', () => {
           body: JSON.stringify({
             content: '这些质疑里有一部分成立，但我认为真正的问题仍然是资料分散和消息脱节，因为这会让跨角色判断持续丢失，而且现有做法无法稳定追踪。',
             action: 'objection_response',
+            focusAction: 'partial_accept',
             projectPath: testSessionsDir,
           }),
         });
@@ -556,7 +574,11 @@ describe('Web Session API', () => {
         await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: '纭闂瀹氫箟銆?', action: 'problem_correction', projectPath: testSessionsDir }),
+          body: JSON.stringify({
+            content: buildChallengeProblemCorrection('团队没有稳定的议题收敛入口，导致 challenge 结论无法沉淀。'),
+            action: 'problem_correction',
+            projectPath: testSessionsDir,
+          }),
         });
         await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
           method: 'POST',
@@ -564,6 +586,7 @@ describe('Web Session API', () => {
           body: JSON.stringify({
             content: '我会直接回应这些质疑：团队真正缺的不是一个漂亮界面，而是围绕议题沉淀判断、记录分歧并持续推进的共同工作面，这一点现在仍然缺失。',
             action: 'objection_response',
+            focusAction: 'direct_counter',
             projectPath: testSessionsDir,
           }),
         });
@@ -1168,11 +1191,67 @@ describe('Web Session Phase Metadata (Task 1)', () => {
     expect(html).toContain('至少 50 字');
     expect(html).toContain('已达到质疑模式最大 5 轮');
   });
+
+  it('renders checklist and downstream gate placeholders for the strict challenge workbench', async () => {
+    const { renderSessionPage } = await import('../src/views/index.js');
+    const html = renderSessionPage('challenge-checklist-test');
+
+    expect(html).toContain('id="challengeChecklistPanel"');
+    expect(html).toContain('本步过关条件');
+    expect(html).toContain('function renderChallengeChecklist(');
+    expect(html).toContain('function buildChallengeModeSwitchState(');
+    expect(html).toContain('data-mode-blocked-reason');
+  });
+
+  it('renders a structured problem correction form shell for the correction phase', async () => {
+    const { renderSessionPage } = await import('../src/views/index.js');
+    const html = renderSessionPage('challenge-checklist-test');
+
+    expect(html).toContain('id="challengeProblemCorrectionForm"');
+    expect(html).toContain('name="problemDefinition"');
+    expect(html).toContain('name="scenario"');
+    expect(html).toContain('data-list-field="topPains"');
+    expect(html).toContain('data-list-field="constraints"');
+    expect(html).toContain('智能整理');
+  });
+
+  it('wires the structured problem correction form with list controls and serializer helpers', async () => {
+    const { renderSessionPage } = await import('../src/views/index.js');
+    const html = renderSessionPage('challenge-checklist-test');
+
+    expect(html).toContain('data-add-list="topPains"');
+    expect(html).toContain('data-add-list="constraints"');
+    expect(html).toContain('function serializeChallengeProblemCorrectionForm(');
+    expect(html).toContain('function syncChallengeProblemCorrectionForm(');
+  });
+
+  it('requires a response path for normal objection replies and carries challenge handoff state into mode gating', async () => {
+    const { renderSessionPage } = await import('../src/views/index.js');
+    const html = renderSessionPage('challenge-handoff-gate-test');
+
+    expect(html).toContain('action === \'objection_response\'');
+    expect(html).toContain('waiting_user_objection_response');
+    expect(html).toContain('必须先选择一种回应路径');
+    expect(html).toContain('latestChallengeHandoff');
+    expect(html).toContain('matureEnoughForRequirementBuild');
+  });
 });
 
 describe('Web Challenge Mode Checkpoints (Task 2)', () => {
   const previous: Record<string, string | undefined> = {};
   const longChallengeResponse = '这个回应会逐条说明为什么当前质疑只部分成立，并补充真实案例、限制条件和仍需验证的证据，以便继续判断是否真的值得推进。';
+  const challengeResponsePath = 'partial_accept';
+
+  function buildStructuredProblemCorrection(problem = '团队缺少统一的需求收敛入口，导致判断依据和优先级持续漂移。'): string {
+    return [
+      `问题定义：${problem}`,
+      '场景：一个 10 人左右的产品研发团队，每周都会收到来自销售、运营和老板的临时需求。',
+      '痛点1：需求散落在聊天、文档和会议里，后续很难回看。',
+      '痛点2：谁拍板、为什么拍板经常不透明，导致执行反复返工。',
+      '痛点3：没有统一的优先级判断方式，临时需求经常挤占主线。',
+      '约束：必须在两周内验证价值，不能要求团队先做复杂流程改造。',
+    ].join('\n');
+  }
 
   function useFakeProvider() {
     previous.mode = process.env.PROVIDER_MODE;
@@ -1247,7 +1326,7 @@ describe('Web Challenge Mode Checkpoints (Task 2)', () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            content: '闂瀹氫箟鏄細鍥㈤槦缂哄皯鍏卞悓鐨勫彇鑸嶅垽鏂鏋讹紝瀵艰嚧鍐崇瓥婕傜Щ銆?',
+            content: buildStructuredProblemCorrection('团队缺少共同的取舍判断框架，导致决策经常漂移。'),
             action: 'problem_correction',
             projectPath: testSessionsDir,
           }),
@@ -1289,7 +1368,11 @@ describe('Web Challenge Mode Checkpoints (Task 2)', () => {
         await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: '鏍告鍚庣殑闂瀹氫箟銆?', action: 'problem_correction', projectPath: testSessionsDir }),
+          body: JSON.stringify({
+            content: buildStructuredProblemCorrection('团队没有统一的需求收敛入口，导致判断依据不断丢失。'),
+            action: 'problem_correction',
+            projectPath: testSessionsDir,
+          }),
         });
 
         const step3Response = await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
@@ -1298,6 +1381,7 @@ describe('Web Challenge Mode Checkpoints (Task 2)', () => {
           body: JSON.stringify({
             content: '我认为刺客的反驳并不完全成立，因为团队现在的问题不是多一个管理界面，而是资料和判断依据持续散落；用户幽灵的担忧我接受一部分，但这恰好说明需要把推进过程显式化。',
             action: 'objection_response',
+            focusAction: challengeResponsePath,
             projectPath: testSessionsDir,
           }),
         });
@@ -1338,7 +1422,11 @@ describe('Web Challenge Mode Checkpoints (Task 2)', () => {
         await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: '确认问题定义', action: 'problem_correction', projectPath: testSessionsDir }),
+          body: JSON.stringify({
+            content: buildStructuredProblemCorrection('技术评审资料持续分散，导致研发和产品很难快速形成一致判断。'),
+            action: 'problem_correction',
+            projectPath: testSessionsDir,
+          }),
         });
 
         const interruptResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
@@ -1347,6 +1435,7 @@ describe('Web Challenge Mode Checkpoints (Task 2)', () => {
           body: JSON.stringify({
             content: 'AI 可以缩短周期并降低成本，技术已经成熟，所以这不是问题；只要把模型接进流程里，资料分散、消息脱节和跨角色协作这些阻塞自然都会被解决掉。',
             action: 'objection_response',
+            focusAction: challengeResponsePath,
             projectPath: testSessionsDir,
           }),
         });
@@ -1384,7 +1473,11 @@ describe('Web Challenge Mode Checkpoints (Task 2)', () => {
         await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: '确认问题定义', action: 'problem_correction', projectPath: testSessionsDir }),
+          body: JSON.stringify({
+            content: buildStructuredProblemCorrection('团队没有稳定的问题定义与优先级判断方式。'),
+            action: 'problem_correction',
+            projectPath: testSessionsDir,
+          }),
         });
 
         const response = await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
@@ -1393,6 +1486,7 @@ describe('Web Challenge Mode Checkpoints (Task 2)', () => {
           body: JSON.stringify({
             content: '太短了',
             action: 'objection_response',
+            focusAction: challengeResponsePath,
             projectPath: testSessionsDir,
           }),
         });
@@ -1400,6 +1494,129 @@ describe('Web Challenge Mode Checkpoints (Task 2)', () => {
         expect(response.status).toBe(400);
         const payload = await readJson<any>(response);
         expect(payload.error).toContain('至少 50 字');
+      });
+    } finally {
+      restoreProvider();
+    }
+  });
+
+  it('rejects problem corrections that do not carry the required confirmation checklist', async () => {
+    useFakeProvider();
+    try {
+      await withAppServer(async (baseUrl) => {
+        const createResponse = await fetch(`${baseUrl}/api/sessions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ topic: '验证问题确认 checklist', projectPath: testSessionsDir }),
+        });
+        const created = await readJson<any>(createResponse);
+        const sessionId = created.session.sessionId;
+
+        await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: '先抛一个问题', action: 'raw_topic', projectPath: testSessionsDir }),
+        });
+
+        const response = await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content: '我觉得问题定义差不多就是这样。',
+            action: 'problem_correction',
+            projectPath: testSessionsDir,
+          }),
+        });
+
+        expect(response.status).toBe(400);
+        const payload = await readJson<any>(response);
+        expect(payload.error).toContain('场景/行业');
+        expect(payload.error).toContain('至少 3 条核心痛点');
+      });
+    } finally {
+      restoreProvider();
+    }
+  });
+
+  it('accepts problem corrections that use the combined 场景/行业 field alias', async () => {
+    useFakeProvider();
+    try {
+      await withAppServer(async (baseUrl) => {
+        const createResponse = await fetch(`${baseUrl}/api/sessions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ topic: '验证场景别名', projectPath: testSessionsDir }),
+        });
+        const created = await readJson<any>(createResponse);
+        const sessionId = created.session.sessionId;
+
+        await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: '先抛一个问题', action: 'raw_topic', projectPath: testSessionsDir }),
+        });
+
+        const response = await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content: [
+              '问题定义：反馈无法被持续记录和闭环，导致判断依据不断丢失。',
+              '场景/行业：暖通智能运维公司的内部协作场景。',
+              '核心痛点：',
+              '- 缺少有记录的反馈通道。',
+              '- 缺少对提问者和解决者的激励。',
+              '- 缺少把问题转成产品并验收的路径。',
+              '约束：',
+              '- 单人开发，两周完成。',
+            ].join('\n'),
+            action: 'problem_correction',
+            projectPath: testSessionsDir,
+          }),
+        });
+
+        expect(response.status).toBe(200);
+        const payload = await readJson<any>(response);
+        expect(payload.session.currentPhase).toBe('waiting_user_objection_response');
+      });
+    } finally {
+      restoreProvider();
+    }
+  });
+
+  it('returns structured draft suggestions for challenge problem correction assist', async () => {
+    useFakeProvider();
+    try {
+      await withAppServer(async (baseUrl) => {
+        const createResponse = await fetch(`${baseUrl}/api/sessions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ topic: '验证问题修正智能整理', projectPath: testSessionsDir }),
+        });
+        const created = await readJson<any>(createResponse);
+        const sessionId = created.session.sessionId;
+
+        await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: '先抛一个问题', action: 'raw_topic', projectPath: testSessionsDir }),
+        });
+
+        const response = await fetch(`${baseUrl}/api/sessions/${sessionId}/challenge/problem-correction-assist`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content: '我们公司内部协作里，问题反馈没有统一入口，也没有激励，很多问题最后也进不了产品验收流程。单人开发，两周内要做出能验证价值的东西。',
+            projectPath: testSessionsDir,
+          }),
+        });
+
+        expect(response.status).toBe(200);
+        const payload = await readJson<any>(response);
+        expect(payload.suggestion.problemDefinition).toBeTruthy();
+        expect(payload.suggestion.scenario).toBeTruthy();
+        expect(Array.isArray(payload.suggestion.topPains)).toBe(true);
+        expect(Array.isArray(payload.reminders)).toBe(true);
       });
     } finally {
       restoreProvider();
@@ -1427,7 +1644,11 @@ describe('Web Challenge Mode Checkpoints (Task 2)', () => {
         await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: '确认问题定义', action: 'problem_correction', projectPath: testSessionsDir }),
+          body: JSON.stringify({
+            content: buildStructuredProblemCorrection('团队总是把表面诉求当成真实问题，导致方案来回推翻。'),
+            action: 'problem_correction',
+            projectPath: testSessionsDir,
+          }),
         });
 
         const interruptResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
@@ -1436,6 +1657,7 @@ describe('Web Challenge Mode Checkpoints (Task 2)', () => {
           body: JSON.stringify({
             content: 'AI 可以缩短周期并降低成本，技术已经成熟，所以这不是问题；只要把模型接进流程里，资料分散、消息脱节和跨角色协作这些阻塞自然都会被解决掉。',
             action: 'objection_response',
+            focusAction: challengeResponsePath,
             projectPath: testSessionsDir,
           }),
         });
@@ -1497,7 +1719,11 @@ describe('Web Challenge Mode Checkpoints (Task 2)', () => {
           const correctionResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content: `第 ${round + 1} 轮修正问题定义`, action: 'problem_correction', projectPath: testSessionsDir }),
+            body: JSON.stringify({
+              content: buildStructuredProblemCorrection(`第 ${round + 1} 轮的问题是：团队仍然缺少统一的需求收敛入口。`),
+              action: 'problem_correction',
+              projectPath: testSessionsDir,
+            }),
           });
           expect(correctionResponse.status).toBe(200);
 
@@ -1507,6 +1733,7 @@ describe('Web Challenge Mode Checkpoints (Task 2)', () => {
             body: JSON.stringify({
               content: longChallengeResponse,
               action: 'objection_response',
+              focusAction: challengeResponsePath,
               projectPath: testSessionsDir,
             }),
           });
@@ -1548,10 +1775,67 @@ describe('Web Challenge Mode Checkpoints (Task 2)', () => {
       restoreProvider();
     }
   });
+
+  it('creates a structured challenge handoff after a completed round', async () => {
+    useFakeProvider();
+    try {
+      await withAppServer(async (baseUrl) => {
+        const createResponse = await fetch(`${baseUrl}/api/sessions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ topic: '验证 challenge handoff 生成', projectPath: testSessionsDir }),
+        });
+        const created = await readJson<any>(createResponse);
+        const sessionId = created.session.sessionId;
+
+        await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: '先抛一个问题', action: 'raw_topic', projectPath: testSessionsDir }),
+        });
+
+        await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content: buildStructuredProblemCorrection('团队没有统一的需求收敛入口，导致判断依据和优先级持续漂移。'),
+            action: 'problem_correction',
+            projectPath: testSessionsDir,
+          }),
+        });
+
+        const response = await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content: longChallengeResponse,
+            action: 'objection_response',
+            focusAction: challengeResponsePath,
+            projectPath: testSessionsDir,
+          }),
+        });
+
+        expect(response.status).toBe(200);
+        const payload = await readJson<any>(response);
+        expect(payload.session.latestChallengeHandoff).toBeTruthy();
+        expect(payload.session.latestChallengeHandoff.problemFrame.oneSentenceProblem).toBeTruthy();
+        expect(payload.session.latestChallengeHandoff.userConfirmedContext.topPains.length).toBeGreaterThanOrEqual(3);
+        expect(payload.session.latestChallengeHandoff.strongestCounterHypothesis).toBeTruthy();
+        expect(payload.session.latestChallengeHandoff.adoptionRisks.length).toBeGreaterThan(0);
+        expect(payload.session.latestChallengeHandoff.mvpScope.include.length).toBeGreaterThan(0);
+        expect(Array.isArray(payload.session.latestChallengeHandoff.openConflicts)).toBe(true);
+        expect(payload.session.latestChallengeHandoff.nextValidationActions.length).toBeGreaterThan(0);
+        expect(typeof payload.session.latestChallengeHandoff.roundStatus.matureEnoughForDecision).toBe('boolean');
+      });
+    } finally {
+      restoreProvider();
+    }
+  });
 });
 
 describe('Web Decision Mode Checkpoints (Task 3)', () => {
   const previous: Record<string, string | undefined> = {};
+  const strictChallengeResponse = '这个回应会逐条说明为什么当前质疑只部分成立，并补充真实案例、限制条件和仍需验证的证据，以便继续判断是否真的值得推进。';
 
   function useFakeProvider() {
     previous.mode = process.env.PROVIDER_MODE;
@@ -1566,6 +1850,38 @@ describe('Web Decision Mode Checkpoints (Task 3)', () => {
     process.env.PROVIDER_MODE = previous.mode;
     process.env.PROVIDER_TYPE = previous.type;
     process.env.MODEL_ID = previous.modelId;
+  }
+
+  async function completeChallengeRound(baseUrl: string, sessionId: string) {
+    await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: '先抛一个议题', action: 'raw_topic', projectPath: testSessionsDir }),
+    });
+
+    await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        content: buildChallengeProblemCorrection('团队没有统一的需求收敛入口，导致判断依据和优先级持续漂移。'),
+        action: 'problem_correction',
+        projectPath: testSessionsDir,
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        content: strictChallengeResponse,
+        action: 'objection_response',
+        focusAction: 'partial_accept',
+        projectPath: testSessionsDir,
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    return readJson<any>(response);
   }
 
   it('switching into decision resets the session shell to decision phase metadata', async () => {
@@ -1668,9 +1984,111 @@ describe('Web Decision Mode Checkpoints (Task 3)', () => {
       restoreProvider();
     }
   });
+
+  it('switching into decision after a completed challenge round seeds the frame from the latest handoff', async () => {
+    useFakeProvider();
+    try {
+      await withAppServer(async (baseUrl) => {
+        const createResponse = await fetch(`${baseUrl}/api/sessions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ topic: '把 challenge 收束带去 decision', projectPath: testSessionsDir }),
+        });
+        const created = await readJson<any>(createResponse);
+        const sessionId = created.session.sessionId;
+
+        const grounded = await completeChallengeRound(baseUrl, sessionId);
+        expect(grounded.session.latestChallengeHandoff).toBeTruthy();
+
+        const switchResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/mode`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: 'decision', projectPath: testSessionsDir }),
+        });
+
+        expect(switchResponse.status).toBe(200);
+        const switched = await readJson<any>(switchResponse);
+        expect(switched.session.currentMode).toBe('decision');
+        expect(switched.session.currentPhase).toBe('waiting_user_frame_confirmation');
+        expect(switched.session.requiredUserAction).toContain('裁决框架');
+        expect(switched.modeState.messages.at(-1)?.roleId).toBe('solution');
+        expect(switched.modeState.draftSummary.summary).toContain('已承接质疑模式 handoff');
+        expect(switched.artifacts.drafts.frame).toBeTruthy();
+      });
+    } finally {
+      restoreProvider();
+    }
+  });
 });
 
 describe('Web Requirement Build Finalization (Task 4)', () => {
+  it('switching into requirement-build after a mature challenge handoff seeds the first spec draft', async () => {
+    const previous: Record<string, string | undefined> = {};
+    previous.mode = process.env.PROVIDER_MODE;
+    previous.type = process.env.PROVIDER_TYPE;
+    previous.modelId = process.env.MODEL_ID;
+    process.env.PROVIDER_MODE = 'fake';
+    process.env.PROVIDER_TYPE = 'openai';
+    process.env.MODEL_ID = 'fake-model';
+
+    try {
+      await withAppServer(async (baseUrl) => {
+        const createResponse = await fetch(`${baseUrl}/api/sessions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ topic: '把 challenge 收束带去 requirement-build', projectPath: testSessionsDir }),
+        });
+        const created = await readJson<any>(createResponse);
+        const sessionId = created.session.sessionId;
+
+        await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: '先抛一个议题', action: 'raw_topic', projectPath: testSessionsDir }),
+        });
+        await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content: buildChallengeProblemCorrection('团队没有统一的需求收敛入口，导致判断依据和优先级持续漂移。'),
+            action: 'problem_correction',
+            projectPath: testSessionsDir,
+          }),
+        });
+        const groundedResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content: '这个回应会逐条说明为什么当前质疑只部分成立，并补充真实案例、限制条件和仍需验证的证据，以便继续判断是否真的值得推进。',
+            action: 'objection_response',
+            focusAction: 'partial_accept',
+            projectPath: testSessionsDir,
+          }),
+        });
+        expect(groundedResponse.status).toBe(200);
+
+        const switchResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/mode`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: 'requirement-build', projectPath: testSessionsDir }),
+        });
+
+        expect(switchResponse.status).toBe(200);
+        const switched = await readJson<any>(switchResponse);
+        expect(switched.session.currentMode).toBe('requirement-build');
+        expect(switched.session.currentPhase).toBe('waiting_user_draft_revision');
+        expect(switched.session.requiredUserAction).toContain('规格草稿');
+        expect(switched.modeState.draftSummary.summary).toContain('已承接质疑模式 handoff');
+        expect(switched.artifacts.drafts.spec).toBeTruthy();
+        expect(switched.artifacts.drafts.spec.content).toContain('# 规格草稿');
+      });
+    } finally {
+      process.env.PROVIDER_MODE = previous.mode;
+      process.env.PROVIDER_TYPE = previous.type;
+      process.env.MODEL_ID = previous.modelId;
+    }
+  });
+
   it('finalization_note creates a real artifact version and updates finalArtifacts', async () => {
     await withAppServer(async (baseUrl) => {
       const createResponse = await fetch(`${baseUrl}/api/sessions`, {
@@ -1734,6 +2152,34 @@ describe('Web Cross-Mode Guidance (Task 5)', () => {
     const html = renderSessionPage('session-guidance-test');
     expect(html).toContain('id="sessionModeWarning"');
     expect(html).toContain('id="sessionRollbackHint"');
+  });
+});
+
+describe('Web Session Export', () => {
+  it('exports the current session as markdown', async () => {
+    await withAppServer(async (baseUrl) => {
+      const createResponse = await fetch(`${baseUrl}/api/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic: '导出这个议题', projectPath: testSessionsDir }),
+      });
+      const created = await readJson<any>(createResponse);
+      const sessionId = created.session.sessionId;
+
+      const exportResponse = await fetch(
+        `${baseUrl}/api/sessions/${sessionId}/export.md?projectPath=${encodeURIComponent(testSessionsDir)}`,
+      );
+
+      expect(exportResponse.status).toBe(200);
+      expect(exportResponse.headers.get('content-type')).toContain('text/markdown');
+      expect(exportResponse.headers.get('content-disposition')).toContain('.md');
+
+      const markdown = await exportResponse.text();
+      expect(markdown).toContain('# 导出这个议题');
+      expect(markdown).toContain('## 会话信息');
+      expect(markdown).toContain('## 完整时间线');
+      expect(markdown).toContain('等待输入本轮议题');
+    });
   });
 });
 
